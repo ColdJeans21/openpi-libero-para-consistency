@@ -1,6 +1,8 @@
 import flax.nnx as nnx
 import jax
+import jax.numpy as jnp
 
+from openpi.models.pi0 import paired_flow_matching_losses
 import openpi.models.pi0_config as _pi0_config
 
 
@@ -44,3 +46,46 @@ def test_pi0_all_lora():
     assert len(state) == 17
     assert all("lora" not in p for p in state)
     assert all("llm" in p for p in state)
+
+
+def test_paired_flow_matching_losses_share_one_target():
+    target = jnp.zeros((2, 3, 4))
+    velocity = jnp.ones_like(target)
+    velocity_alt = jnp.full_like(target, 2.0)
+
+    total, metrics = paired_flow_matching_losses(velocity, velocity_alt, target, 0.1)
+
+    assert jnp.allclose(metrics["loss_fm_original"], 1.0)
+    assert jnp.allclose(metrics["loss_fm_paraphrase"], 4.0)
+    assert jnp.allclose(metrics["loss_consistency"], 1.0)
+    assert jnp.allclose(total, 2.6)
+
+
+def test_paired_flow_matching_consistency_is_zero_for_equal_velocities():
+    target = jnp.zeros((1, 2, 3))
+    velocity = jnp.ones_like(target)
+
+    total, metrics = paired_flow_matching_losses(velocity, velocity, target, 0.5)
+
+    assert jnp.allclose(metrics["loss_consistency"], 0.0)
+    assert jnp.allclose(total, metrics["loss_fm_original"])
+
+
+def test_consistency_loss_produces_gradient():
+    target = jnp.zeros((1, 2, 3))
+    velocity_alt = jnp.zeros_like(target)
+
+    def consistency_objective(velocity):
+        _, metrics = paired_flow_matching_losses(velocity, velocity_alt, target, 1.0)
+        return jnp.mean(metrics["loss_consistency"])
+
+    gradient = jax.grad(consistency_objective)(jnp.ones_like(target))
+    assert jnp.linalg.norm(gradient) > 0
+
+
+def test_paired_prompt_config_exposes_second_prompt_spec():
+    config = _pi0_config.Pi0Config(paired_prompt_training=True, consistency_loss_weight=0.1)
+    observation, _ = config.inputs_spec(batch_size=2)
+
+    assert observation.tokenized_prompt_alt.shape == (2, config.max_token_len)
+    assert observation.tokenized_prompt_alt_mask.shape == (2, config.max_token_len)

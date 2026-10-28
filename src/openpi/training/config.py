@@ -34,6 +34,21 @@ ModelType: TypeAlias = _model.ModelType
 Filter: TypeAlias = nnx.filterlib.Filter
 
 
+LIBERO_GOAL_TASKS = (
+    "put the bowl on the plate",
+    "put the wine bottle on the rack",
+    "open the top drawer and put the bowl inside",
+    "put the cream cheese in the bowl",
+    "put the wine bottle on top of the cabinet",
+    "push the plate to the front of the stove",
+    "turn on the stove",
+    "put the bowl on the stove",
+    "put the bowl on top of the cabinet",
+    "open the middle drawer of the cabinet",
+)
+LIBERO_TRAIN_PARAPHRASES = "examples/libero_para/train_paraphrases_v1.json"
+
+
 @dataclasses.dataclass(frozen=True)
 class AssetsConfig:
     """Determines the location of assets (e.g., norm stats) that will be used to set up the data pipeline.
@@ -89,6 +104,14 @@ class DataConfig:
 
     # If true, will use the LeRobot dataset task to define the prompt.
     prompt_from_task: bool = False
+
+    # Optional paired-prompt training data. The JSON maps each canonical task
+    # instruction to a list of independently authored semantic equivalents.
+    paired_prompt_path: str | None = None
+    paired_prompt_seed: int = 0
+
+    # If non-empty, only episodes whose task text occurs in this list are loaded.
+    task_filter: Sequence[str] = ()
 
     # Only used for RLDS data loader (ie currently only used for DROID).
     rlds_data_dir: str | None = None
@@ -307,6 +330,7 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
                         "observation/state": "state",
                         "actions": "actions",
                         "prompt": "prompt",
+                        **({"prompt_alt": "prompt_alt"} if getattr(model_config, "paired_prompt_training", False) else {}),
                     }
                 )
             ]
@@ -694,6 +718,95 @@ _CONFIGS = [
             paligemma_variant="gemma_2b_lora", action_expert_variant="gemma_300m_lora"
         ).get_freeze_filter(),
         # Turn off EMA for LoRA finetuning.
+        ema_decay=None,
+    ),
+    # LIBERO-Para paired-prompt experiment. All three configs use the same ten
+    # LIBERO-Goal tasks and the same number of physical demonstrations per step.
+    # Paired variants run an effective language-condition batch of 2B.
+    TrainConfig(
+        name="pi0_libero_goal_lora_canonical",
+        model=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True, task_filter=LIBERO_GOAL_TASKS),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        ema_decay=None,
+    ),
+    TrainConfig(
+        name="pi0_libero_goal_lora_para_aug",
+        model=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            paired_prompt_training=True,
+            consistency_loss_weight=0.0,
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            paired_prompt_training=True,
+        ).get_freeze_filter(),
+        ema_decay=None,
+    ),
+    TrainConfig(
+        name="pi0_libero_goal_lora_consistency",
+        model=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            paired_prompt_training=True,
+            consistency_loss_weight=0.1,
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+            paired_prompt_training=True,
+            consistency_loss_weight=0.1,
+        ).get_freeze_filter(),
         ema_decay=None,
     ),
     TrainConfig(

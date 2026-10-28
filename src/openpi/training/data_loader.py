@@ -1,7 +1,9 @@
 from collections.abc import Iterator, Sequence
+import json
 import logging
 import multiprocessing
 import os
+import pathlib
 import typing
 from typing import Literal, Protocol, SupportsIndex, TypeVar
 
@@ -17,6 +19,26 @@ from openpi.training.droid_rlds_dataset import DroidRldsDataset
 import openpi.transforms as _transforms
 
 T_co = TypeVar("T_co", covariant=True)
+
+
+def expand_episode_data_index_for_global_ids(
+    episode_data_index: dict[str, torch.Tensor], episodes: Sequence[int]
+) -> dict[str, torch.Tensor]:
+    """Indexes subset boundaries by the original global episode IDs.
+
+    LeRobot v2.0 keeps global ``episode_index`` values in parquet rows but
+    ``get_episode_data_index`` returns a compact array for a selected subset.
+    Expanding the boundary arrays prevents valid global IDs from indexing the
+    compact arrays out of bounds.
+    """
+    size = max(episodes) + 1
+    expanded = {
+        key: torch.zeros(size, dtype=value.dtype, device=value.device) for key, value in episode_data_index.items()
+    }
+    for local_index, global_episode_id in enumerate(episodes):
+        for key, value in episode_data_index.items():
+            expanded[key][global_episode_id] = value[local_index]
+    return expanded
 
 
 class Dataset(Protocol[T_co]):
@@ -138,15 +160,47 @@ def create_torch_dataset(
         return FakeDataset(model_config, num_samples=1024)
 
     dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
+    episodes = None
+    if data_config.task_filter:
+        selected_tasks = set(data_config.task_filter)
+        unknown_tasks = selected_tasks.difference(dataset_meta.task_to_task_index)
+        if unknown_tasks:
+            raise ValueError(f"Unknown tasks in task_filter: {sorted(unknown_tasks)}")
+        episodes = [
+            episode_index
+            for episode_index, episode in dataset_meta.episodes.items()
+            if selected_tasks.intersection(episode["tasks"])
+        ]
+        if not episodes:
+            raise ValueError(f"task_filter selected no episodes: {sorted(selected_tasks)}")
+        logging.info("Selected %d episodes for %d tasks", len(episodes), len(selected_tasks))
+
     dataset = lerobot_dataset.LeRobotDataset(
         data_config.repo_id,
+        episodes=episodes,
         delta_timestamps={
             key: [t / dataset_meta.fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
         },
     )
+    if episodes is not None:
+        dataset.episode_data_index = expand_episode_data_index_for_global_ids(dataset.episode_data_index, episodes)
 
     if data_config.prompt_from_task:
-        dataset = TransformedDataset(dataset, [_transforms.PromptFromLeRobotTask(dataset_meta.tasks)])
+        if data_config.paired_prompt_path is None:
+            prompt_transform = _transforms.PromptFromLeRobotTask(dataset_meta.tasks)
+        else:
+            prompt_path = pathlib.Path(data_config.paired_prompt_path)
+            if not prompt_path.is_absolute():
+                prompt_path = pathlib.Path(__file__).resolve().parents[3] / prompt_path
+            with prompt_path.open(encoding="utf-8") as f:
+                paraphrase_data = json.load(f)
+            paraphrases = paraphrase_data.get("paraphrases", paraphrase_data)
+            prompt_transform = _transforms.PairedPromptFromLeRobotTask(
+                dataset_meta.tasks,
+                paraphrases,
+                seed=data_config.paired_prompt_seed,
+            )
+        dataset = TransformedDataset(dataset, [prompt_transform])
 
     return dataset
 

@@ -1,0 +1,86 @@
+{
+  "version": "1.0",
+  "provenance": "Independently authored training-only paraphrases. LIBERO-Para evaluation strings were not used to generate this file.",
+  "paraphrases": {
+    "put the bowl on the plate": [
+      "place the bowl onto the plate",
+      "move the bowl so it rests on the plate",
+      "set the bowl down on the plate",
+      "the bowl should end up on the plate",
+      "transfer the bowl to the plate",
+      "can you place the bowl on the plate"
+    ],
+    "put the wine bottle on the rack": [
+      "place the wine bottle onto the rack",
+      "move the wine bottle to the rack",
+      "set the bottle of wine on the rack",
+      "the wine bottle should end up on the rack",
+      "transfer the wine bottle onto the rack",
+      "relocate the wine bottle so it sits on the rack"
+    ],
+    "open the top drawer and put the bowl inside": [
+      "open the upper drawer, then place the bowl in it",
+      "pull open the top drawer and move the bowl inside",
+      "put the bowl into the top drawer after opening it",
+      "the bowl belongs inside the opened top drawer",
+      "open the highest drawer and set the bowl within it",
+      "can you open the top drawer and place the bowl inside"
+    ],
+    "put the cream cheese in the bowl": [
+      "place the cream cheese into the bowl",
+      "move the cream cheese to the inside of the bowl",
+      "lower the cream cheese into the bowl",
+      "the cream cheese should end up inside the bowl",
+      "relocate the cream cheese so it sits within the bowl",
+      "can you put the cream cheese inside the bowl"
+    ],
+    "put the wine bottle on top of the cabinet": [
+      "place the wine bottle on the cabinet top",
+      "move the wine bottle onto the top surface of the cabinet",
+      "set the bottle of wine on the cabinet's upper surface",
+      "the wine bottle should end up on top of the cabinet",
+      "transfer the wine bottle to the cabinet's top",
+      "can you place the wine bottle atop the cabinet"
+    ],
+    "push the plate to the front of the stove": [
+      "slide the plate to the area in front of the stove",
+      "move the plate forward until it is before the stove",
+      "push the plate into position at the stove's front",
+      "the plate should end up in front of the stove",
+      "shift the plate toward the front side of the stove",
+      "can you slide the plate in front of the stove"
+    ],
+    "turn on the stove": [
+      "switch the stove on",
+      "set the stove to its powered-on state",
+      "engage the stove's power",
+      "make sure the stove is turned on",
+      "change the stove from off to on",
+      "can you turn the stove on"
+    ],
+    "put the bowl on the stove": [
+      "place the bowl onto the stove",
+      "move the bowl to the stove top",
+      "set the bowl down on the stove",
+      "the bowl should end up on the stove",
+      "transfer the bowl onto the stove",
+      "can you place the bowl on the stove"
+    ],
+    "put the bowl on top of the cabinet": [
+      "place the bowl on the cabinet top",
+      "move the bowl onto the top surface of the cabinet",
+      "set the bowl on the cabinet's upper surface",
+      "the bowl should end up on top of the cabinet",
+      "transfer the bowl to the cabinet's top",
+      "can you place the bowl atop the cabinet"
+    ],
+    "open the middle drawer of the cabinet": [
+      "pull open the cabinet's middle drawer",
+      "open the drawer in the center of the cabinet",
+      "slide the middle cabinet drawer open",
+      "the central drawer of the cabinet should be opened",
+      "open the cabinet drawer between the top and bottom drawers",
+      "can you open the cabinet's middle drawer"
+    ]
+  }
+}

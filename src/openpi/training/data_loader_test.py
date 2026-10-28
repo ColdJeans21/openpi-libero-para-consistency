@@ -1,6 +1,7 @@
 import dataclasses
 
 import jax
+import torch
 
 from openpi.models import pi0_config
 from openpi.training import config as _config
@@ -60,6 +61,20 @@ def test_with_fake_dataset():
 
     for _, actions in batches:
         assert actions.shape == (config.batch_size, config.model.action_horizon, config.model.action_dim)
+
+
+def test_expand_episode_data_index_for_global_ids():
+    compact = {
+        "from": torch.tensor([0, 5, 12]),
+        "to": torch.tensor([5, 12, 20]),
+    }
+
+    expanded = _data_loader.expand_episode_data_index_for_global_ids(compact, episodes=[10, 42, 99])
+
+    assert expanded["from"][10].item() == 0
+    assert expanded["to"][42].item() == 12
+    assert expanded["from"][99].item() == 12
+    assert expanded["to"][99].item() == 20
 
 
 def test_with_real_dataset():

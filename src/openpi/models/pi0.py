@@ -16,6 +16,25 @@ from openpi.shared import array_typing as at
 logger = logging.getLogger("openpi")
 
 
+def paired_flow_matching_losses(
+    velocity: at.Float[at.Array, "b ah ad"],
+    velocity_alt: at.Float[at.Array, "b ah ad"],
+    target_velocity: at.Float[at.Array, "b ah ad"],
+    consistency_loss_weight: float,
+) -> tuple[at.Float[at.Array, "b ah"], dict[str, at.Float[at.Array, "b ah"]]]:
+    """Combines two shared-coordinate flow losses and their consistency loss."""
+    loss_fm = jnp.mean(jnp.square(velocity - target_velocity), axis=-1)
+    loss_fm_alt = jnp.mean(jnp.square(velocity_alt - target_velocity), axis=-1)
+    loss_consistency = jnp.mean(jnp.square(velocity - velocity_alt), axis=-1)
+    loss_total = 0.5 * (loss_fm + loss_fm_alt) + consistency_loss_weight * loss_consistency
+    return loss_total, {
+        "loss_fm_original": loss_fm,
+        "loss_fm_paraphrase": loss_fm_alt,
+        "loss_consistency": loss_consistency,
+        "loss_total": loss_total,
+    }
+
+
 def make_attn_mask(input_mask, mask_ar):
     """Adapted from big_vision.
 
@@ -67,6 +86,8 @@ class Pi0(_model.BaseModel):
     def __init__(self, config: pi0_config.Pi0Config, rngs: nnx.Rngs):
         super().__init__(config.action_dim, config.action_horizon, config.max_token_len)
         self.pi05 = config.pi05
+        self.paired_prompt_training = config.paired_prompt_training
+        self.consistency_loss_weight = config.consistency_loss_weight
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -189,6 +210,56 @@ class Pi0(_model.BaseModel):
     def compute_loss(
         self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
     ) -> at.Float[at.Array, "*b ah"]:
+        loss, _ = self.compute_loss_with_metrics(rng, observation, actions, train=train)
+        return loss
+
+    def _predict_velocity(
+        self,
+        observation: _model.Observation,
+        x_t: _model.Actions,
+        time: at.Float[at.Array, " b"],
+    ) -> _model.Actions:
+        """Predicts the flow velocity at an already constructed flow coordinate."""
+        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
+        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
+        input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
+        ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
+        attn_mask = make_attn_mask(input_mask, ar_mask)
+        positions = jnp.cumsum(input_mask, axis=1) - 1
+        (_, suffix_out), _ = self.PaliGemma.llm(
+            [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
+        )
+        return self.action_out_proj(suffix_out[:, -self.action_horizon :])
+
+    def _make_paired_observation(self, observation: _model.Observation) -> _model.Observation:
+        if observation.tokenized_prompt_alt is None or observation.tokenized_prompt_alt_mask is None:
+            raise ValueError(
+                "paired_prompt_training requires tokenized_prompt_alt and tokenized_prompt_alt_mask in each batch"
+            )
+        if observation.tokenized_prompt is None or observation.tokenized_prompt_mask is None:
+            raise ValueError("paired_prompt_training requires the canonical tokenized prompt")
+
+        # The first B elements are canonical and the second B are paraphrases. Images
+        # are duplicated only after preprocessing, so both language branches see the
+        # exact same image augmentation as well as the same state.
+        return _model.Observation(
+            images={key: jnp.concatenate([value, value], axis=0) for key, value in observation.images.items()},
+            image_masks={
+                key: jnp.concatenate([value, value], axis=0) for key, value in observation.image_masks.items()
+            },
+            state=jnp.concatenate([observation.state, observation.state], axis=0),
+            tokenized_prompt=jnp.concatenate(
+                [observation.tokenized_prompt, observation.tokenized_prompt_alt], axis=0
+            ),
+            tokenized_prompt_mask=jnp.concatenate(
+                [observation.tokenized_prompt_mask, observation.tokenized_prompt_alt_mask], axis=0
+            ),
+        )
+
+    @override
+    def compute_loss_with_metrics(
+        self, rng: at.KeyArrayLike, observation: _model.Observation, actions: _model.Actions, *, train: bool = False
+    ) -> tuple[at.Float[at.Array, "*b ah"], dict[str, at.Array]]:
         preprocess_rng, noise_rng, time_rng = jax.random.split(rng, 3)
         observation = _model.preprocess_observation(preprocess_rng, observation, train=train)
 
@@ -199,19 +270,17 @@ class Pi0(_model.BaseModel):
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
 
-        # one big forward pass of prefix + suffix at once
-        prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
-        suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
-        input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
-        ar_mask = jnp.concatenate([prefix_ar_mask, suffix_ar_mask], axis=0)
-        attn_mask = make_attn_mask(input_mask, ar_mask)
-        positions = jnp.cumsum(input_mask, axis=1) - 1
-        (prefix_out, suffix_out), _ = self.PaliGemma.llm(
-            [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
-        )
-        v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+        if not self.paired_prompt_training:
+            v_t = self._predict_velocity(observation, x_t, time)
+            loss = jnp.mean(jnp.square(v_t - u_t), axis=-1)
+            return loss, {"loss_fm_original": loss, "loss_total": loss}
 
-        return jnp.mean(jnp.square(v_t - u_t), axis=-1)
+        paired_observation = self._make_paired_observation(observation)
+        paired_x_t = jnp.concatenate([x_t, x_t], axis=0)
+        paired_time = jnp.concatenate([time, time], axis=0)
+        paired_velocity = self._predict_velocity(paired_observation, paired_x_t, paired_time)
+        v_t, v_t_alt = jnp.split(paired_velocity, 2, axis=0)
+        return paired_flow_matching_losses(v_t, v_t_alt, u_t, self.consistency_loss_weight)
 
     @override
     def sample_actions(

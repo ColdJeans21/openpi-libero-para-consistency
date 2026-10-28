@@ -66,6 +66,8 @@ IMAGE_RESOLUTION = (224, 224)
 #     "state": float32[*b, s],  # Low-dimensional robot state
 #     "tokenized_prompt": int32[*b, l],  # Optional, tokenized language prompt
 #     "tokenized_prompt_mask": bool[*b, l],  # Optional, mask for tokenized prompt
+#     "tokenized_prompt_alt": int32[*b, l],  # Optional, semantically equivalent training prompt
+#     "tokenized_prompt_alt_mask": bool[*b, l],  # Optional, mask for the equivalent prompt
 #     "token_ar_mask": int32[*b, l],  # Optional, autoregressive mask for FAST model
 #     "token_loss_mask": bool[*b, l],  # Optional, loss mask for FAST model
 #
@@ -99,6 +101,11 @@ class Observation(Generic[ArrayT]):
     # Tokenized prompt mask.
     tokenized_prompt_mask: at.Bool[ArrayT, "*b l"] | None = None
 
+    # Optional second prompt used only by paired-prompt training objectives. Inference
+    # continues to use tokenized_prompt and leaves these fields unset.
+    tokenized_prompt_alt: at.Int[ArrayT, "*b l"] | None = None
+    tokenized_prompt_alt_mask: at.Bool[ArrayT, "*b l"] | None = None
+
     # pi0-fast model specific fields.
 
     # Token auto-regressive mask (for FAST autoregressive model).
@@ -112,6 +119,8 @@ class Observation(Generic[ArrayT]):
         # Ensure that tokenized_prompt and tokenized_prompt_mask are provided together.
         if ("tokenized_prompt" in data) != ("tokenized_prompt_mask" in data):
             raise ValueError("tokenized_prompt and tokenized_prompt_mask must be provided together.")
+        if ("tokenized_prompt_alt" in data) != ("tokenized_prompt_alt_mask" in data):
+            raise ValueError("tokenized_prompt_alt and tokenized_prompt_alt_mask must be provided together.")
         # If images are uint8, convert them to [-1, 1] float32.
         for key in data["image"]:
             if data["image"][key].dtype == np.uint8:
@@ -124,6 +133,8 @@ class Observation(Generic[ArrayT]):
             state=data["state"],
             tokenized_prompt=data.get("tokenized_prompt"),
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
+            tokenized_prompt_alt=data.get("tokenized_prompt_alt"),
+            tokenized_prompt_alt_mask=data.get("tokenized_prompt_alt_mask"),
             token_ar_mask=data.get("token_ar_mask"),
             token_loss_mask=data.get("token_loss_mask"),
         )
@@ -203,6 +214,8 @@ def preprocess_observation(
         state=observation.state,
         tokenized_prompt=observation.tokenized_prompt,
         tokenized_prompt_mask=observation.tokenized_prompt_mask,
+        tokenized_prompt_alt=observation.tokenized_prompt_alt,
+        tokenized_prompt_alt_mask=observation.tokenized_prompt_alt_mask,
         token_ar_mask=observation.token_ar_mask,
         token_loss_mask=observation.token_loss_mask,
     )
@@ -278,6 +291,18 @@ class BaseModel(nnx.Module, abc.ABC):
         *,
         train: bool = False,
     ) -> at.Float[at.Array, "*b ah"]: ...
+
+    def compute_loss_with_metrics(
+        self,
+        rng: at.KeyArrayLike,
+        observation: Observation,
+        actions: Actions,
+        *,
+        train: bool = False,
+    ) -> tuple[at.Float[at.Array, "*b ah"], dict[str, at.Array]]:
+        """Computes loss and optional component metrics without changing legacy models."""
+        loss = self.compute_loss(rng, observation, actions, train=train)
+        return loss, {"loss_total": loss}
 
     @abc.abstractmethod
     def sample_actions(self, rng: at.KeyArrayLike, observation: Observation, **kwargs) -> Actions: ...

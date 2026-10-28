@@ -119,3 +119,28 @@ def test_extract_prompt_from_task():
 
     with pytest.raises(ValueError, match="task_index=2 not found in task mapping"):
         transform({"task_index": 2})
+
+
+def test_extract_paired_prompt_from_task_is_deterministic():
+    transform = _transforms.PairedPromptFromLeRobotTask(
+        {1: "canonical"},
+        {"canonical": ["equivalent zero", "equivalent one"]},
+        seed=3,
+    )
+
+    first = transform({"task_index": 1, "frame_index": 5})
+    second = transform({"task_index": 1, "frame_index": 5})
+    assert first["prompt"] == "canonical"
+    assert first["prompt_alt"] == second["prompt_alt"]
+    assert first["prompt_alt"] in {"equivalent zero", "equivalent one"}
+
+
+def test_tokenize_paired_prompt():
+    tokenizer = _tokenizer.PaligemmaTokenizer(max_len=12)
+    transform = _transforms.TokenizePrompt(tokenizer)
+
+    data = transform({"prompt": "canonical", "prompt_alt": "semantic equivalent"})
+
+    assert data["tokenized_prompt"].shape == (12,)
+    assert data["tokenized_prompt_alt"].shape == (12,)
+    assert not np.array_equal(data["tokenized_prompt"], data["tokenized_prompt_alt"])

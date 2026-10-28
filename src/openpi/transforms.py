@@ -263,7 +263,17 @@ class TokenizePrompt(DataTransformFn):
             prompt = prompt.item()
 
         tokens, token_masks = self.tokenizer.tokenize(prompt, state)
-        return {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
+        result = {**data, "tokenized_prompt": tokens, "tokenized_prompt_mask": token_masks}
+
+        # Paired prompts are opt-in and training-only. Tokenizing both here guarantees
+        # that they share the exact same tokenizer and state-conditioning settings.
+        if (prompt_alt := result.pop("prompt_alt", None)) is not None:
+            if not isinstance(prompt_alt, str):
+                prompt_alt = prompt_alt.item()
+            tokens_alt, token_masks_alt = self.tokenizer.tokenize(prompt_alt, state)
+            result["tokenized_prompt_alt"] = tokens_alt
+            result["tokenized_prompt_alt_mask"] = token_masks_alt
+        return result
 
 
 @dataclasses.dataclass(frozen=True)
@@ -322,6 +332,33 @@ class PromptFromLeRobotTask(DataTransformFn):
             raise ValueError(f"{task_index=} not found in task mapping: {self.tasks}")
 
         return {**data, "prompt": prompt}
+
+
+@dataclasses.dataclass(frozen=True)
+class PairedPromptFromLeRobotTask(DataTransformFn):
+    """Adds a canonical task prompt and one deterministic equivalent prompt.
+
+    Selection depends only on stable sample metadata, so results are reproducible
+    across data-loader workers and process restarts.
+    """
+
+    tasks: dict[int, str]
+    paraphrases: Mapping[str, Sequence[str]]
+    seed: int = 0
+
+    def __call__(self, data: DataDict) -> DataDict:
+        if "task_index" not in data:
+            raise ValueError('Cannot extract prompt without "task_index"')
+
+        task_index = int(data["task_index"])
+        if (prompt := self.tasks.get(task_index)) is None:
+            raise ValueError(f"{task_index=} not found in task mapping: {self.tasks}")
+        if not (candidates := self.paraphrases.get(prompt)):
+            raise ValueError(f"No training paraphrases configured for task: {prompt!r}")
+
+        frame_index = int(np.asarray(data.get("frame_index", 0)).reshape(-1)[0])
+        candidate_index = (frame_index + task_index * 1_000_003 + self.seed) % len(candidates)
+        return {**data, "prompt": prompt, "prompt_alt": candidates[candidate_index]}
 
 
 @dataclasses.dataclass(frozen=True)

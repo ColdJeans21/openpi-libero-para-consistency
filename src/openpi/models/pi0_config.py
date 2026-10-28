@@ -32,6 +32,11 @@ class Pi0Config(_model.BaseModelConfig):
     # This config option is not used directly by the model, but it is read by the ModelTransformFactory.
     discrete_state_input: bool = None  # type: ignore
 
+    # Paired-prompt training runs the same observation/action flow coordinate under
+    # the canonical prompt and a semantically equivalent prompt in one 2B forward.
+    paired_prompt_training: bool = False
+    consistency_loss_weight: float = 0.0
+
     pytorch_compile_mode: str | None = "max-autotune"
 
     def __post_init__(self):
@@ -39,6 +44,10 @@ class Pi0Config(_model.BaseModelConfig):
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:
             object.__setattr__(self, "discrete_state_input", self.pi05)
+        if self.consistency_loss_weight < 0:
+            raise ValueError("consistency_loss_weight must be non-negative")
+        if self.consistency_loss_weight > 0 and not self.paired_prompt_training:
+            raise ValueError("A positive consistency_loss_weight requires paired_prompt_training=True")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",
@@ -80,6 +89,16 @@ class Pi0Config(_model.BaseModelConfig):
                 state=jax.ShapeDtypeStruct([batch_size, self.action_dim], jnp.float32),
                 tokenized_prompt=jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32),
                 tokenized_prompt_mask=jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool),
+                tokenized_prompt_alt=(
+                    jax.ShapeDtypeStruct([batch_size, self.max_token_len], jnp.int32)
+                    if self.paired_prompt_training
+                    else None
+                ),
+                tokenized_prompt_alt_mask=(
+                    jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool)
+                    if self.paired_prompt_training
+                    else None
+                ),
             )
         action_spec = jax.ShapeDtypeStruct([batch_size, self.action_horizon, self.action_dim], jnp.float32)
 
