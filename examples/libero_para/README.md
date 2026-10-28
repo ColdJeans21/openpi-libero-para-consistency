@@ -110,4 +110,43 @@ The primary report should include canonical success rate, paraphrase success rat
 their absolute gap, and category-level LIBERO-Para results. Use at least three seeds;
 five seeds (7–11) matches the upstream analysis layout.
 
+### Checkpoint validation and W&B
+
+Closed-loop validation is checkpoint-level rather than an in-process training loss.
+Two-device FSDP occupies both GPUs, so running a second policy server concurrently
+would either contend for memory or change training throughput. Evaluate saved
+checkpoints while training is paused or after it finishes, then attach the results
+to the original W&B run using the checkpoint step as a custom x-axis.
+
+For a training curve, use a fixed, predeclared validation subset at every saved
+checkpoint (for example 10 trials per LIBERO-Goal task and a fixed LIBERO-Para
+subset). Run the final selected checkpoint on 50 trials per Goal task and all 4,092
+LIBERO-Para instructions. Do not compare checkpoints evaluated on different subsets.
+
+Write the canonical summary directly from the LIBERO client:
+
+```bash
+python examples/libero/main.py \
+  --task-suite-name libero_goal \
+  --num-trials-per-task 10 \
+  --seed 7 \
+  --summary-path reports/validation/step_5000/libero_goal_seed7.json
+```
+
+The official LIBERO-Para evaluator writes its own JSON summary. Once both clients
+have finished, backfill their closed-loop success rates into the same training run:
+
+```bash
+uv run scripts/log_validation_to_wandb.py \
+  --checkpoint-dir checkpoints/pi0_libero_goal_lora_consistency/consistency_lam01_30k \
+  --checkpoint-step 5000 \
+  --libero-goal-summary reports/validation/step_5000/libero_goal_seed7.json \
+  --libero-para-summary reports/validation/step_5000/libero_para_seed7/summary.json
+```
+
+This logs `validation/libero_goal_success_rate`,
+`validation/libero_para_success_rate`, and `validation/paraphrase_gap`. Because
+`validation/checkpoint_step` is a custom W&B axis, delayed evaluations remain aligned
+with their actual checkpoint instead of being assigned to the latest training step.
+
 Official benchmark: <https://github.com/cau-hai-lab/LIBERO-Para>.

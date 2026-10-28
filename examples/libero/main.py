@@ -1,5 +1,6 @@
 import collections
 import dataclasses
+import json
 import logging
 import math
 import pathlib
@@ -41,6 +42,7 @@ class Args:
     # Utils
     #################################################################################################################
     video_out_path: str = "data/libero/videos"  # Path to save videos
+    summary_path: str | None = None  # Optional machine-readable evaluation summary.
 
     seed: int = 7  # Random Seed (for reproducibility)
 
@@ -74,6 +76,7 @@ def eval_libero(args: Args) -> None:
 
     # Start evaluation
     total_episodes, total_successes = 0, 0
+    task_results = []
     for task_id in tqdm.tqdm(range(num_tasks_in_suite)):
         # Get task
         task = task_suite.get_task(task_id)
@@ -181,9 +184,35 @@ def eval_libero(args: Args) -> None:
         # Log final results
         logging.info(f"Current task success rate: {float(task_successes) / float(task_episodes)}")
         logging.info(f"Current total success rate: {float(total_successes) / float(total_episodes)}")
+        task_results.append(
+            {
+                "task_id": task_id,
+                "task_description": task_description,
+                "episodes": task_episodes,
+                "successes": task_successes,
+                "success_rate": task_successes / task_episodes,
+            }
+        )
 
-    logging.info(f"Total success rate: {float(total_successes) / float(total_episodes)}")
+    success_rate = float(total_successes) / float(total_episodes)
+    logging.info(f"Total success rate: {success_rate}")
     logging.info(f"Total episodes: {total_episodes}")
+    if args.summary_path is not None:
+        summary_path = pathlib.Path(args.summary_path)
+        summary_path.parent.mkdir(parents=True, exist_ok=True)
+        summary = {
+            "benchmark": "LIBERO",
+            "task_suite_name": args.task_suite_name,
+            "seed": args.seed,
+            "num_trials_per_task": args.num_trials_per_task,
+            "total_episodes": total_episodes,
+            "total_successes": total_successes,
+            "success_rate": success_rate,
+            "task_results": task_results,
+        }
+        with summary_path.open("w", encoding="utf-8") as f:
+            json.dump(summary, f, indent=2)
+        logging.info(f"Wrote evaluation summary to {summary_path}")
 
 
 def _get_libero_env(task, resolution, seed):
