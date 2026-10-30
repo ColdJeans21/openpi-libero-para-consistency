@@ -4,6 +4,7 @@ import json
 import logging
 import math
 import pathlib
+from typing import Optional
 
 import imageio
 from libero.libero import benchmark
@@ -42,7 +43,7 @@ class Args:
     # Utils
     #################################################################################################################
     video_out_path: str = "data/libero/videos"  # Path to save videos
-    summary_path: str | None = None  # Optional machine-readable evaluation summary.
+    summary_path: Optional[str] = None  # noqa: UP007  # Python 3.8 LIBERO runtime compatibility.
 
     seed: int = 7  # Random Seed (for reproducibility)
 
