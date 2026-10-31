@@ -123,6 +123,29 @@ checkpoint (for example 10 trials per LIBERO-Goal task and a fixed LIBERO-Para
 subset). Run the final selected checkpoint on 50 trials per Goal task and all 4,092
 LIBERO-Para instructions. Do not compare checkpoints evaluated on different subsets.
 
+The checked-in checkpoint-curve subset contains 100 instructions: ten for each
+original Goal task, split into seven compositional, two action, and one object
+paraphrase. The seed-7 SHA-256 selection is deterministic and recorded in
+`validation_subset_v1_seed7.json`. Rebuild or audit it with:
+
+```bash
+uv run scripts/build_libero_para_subset.py \
+  --libero-para-root /path/to/LIBERO-Para \
+  --output examples/libero_para/validation_subset_v1_seed7.json \
+  --seed 7
+```
+
+Pass the same manifest to every checkpoint evaluation:
+
+```bash
+python examples/libero_para/eval_openpi.py \
+  --libero-para-root /path/to/LIBERO-Para \
+  --task-manifest examples/libero_para/validation_subset_v1_seed7.json \
+  --model-name pi0-consistency-lam01-step5000 \
+  --seed 7 \
+  --output-dir reports/validation/step_5000/libero_para_seed7
+```
+
 Write the canonical summary directly from the LIBERO client:
 
 ```bash
