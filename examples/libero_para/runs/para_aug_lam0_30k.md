@@ -80,3 +80,32 @@ Matched closed-loop validation was launched after training with the generic
 under `reports/validation/para_aug_lam0_30k/` so they cannot overwrite the
 `lambda_cons=0.1` summaries.
 
+## Matched closed-loop validation results
+
+Validation completed on 2026-11-02 at 17:38 Asia/Shanghai. Every checkpoint
+used seed 7, 100 LIBERO-Goal episodes, and the same fixed 100-instruction
+LIBERO-Para manifest. All metrics were backfilled to W&B run `oad2l00i`.
+
+| Step | Goal SR | Para SR | Goal−Para gap |
+|---:|---:|---:|---:|
+| 10000 | 36% | 15% | 21 pp |
+| 20000 | 41% | 13% | 28 pp |
+| 29999 | **89%** | **50%** | **39 pp** |
+
+For the matched `lambda_cons=0.1` run, the corresponding values were:
+
+| Step | Goal SR | Para SR | Goal−Para gap |
+|---:|---:|---:|---:|
+| 10000 | 39% | 14% | 25 pp |
+| 20000 | 44% | 21% | 23 pp |
+| 29999 | **84%** | **43%** | **41 pp** |
+
+At the final checkpoint, the `lambda_cons=0` augmentation control is +5 pp on
+Goal and +7 pp on Para, with a 2 pp smaller gap. Therefore this single-seed
+validation provides no evidence that `lambda_cons=0.1` improves over matched
+paraphrase augmentation. The intermediate checkpoints are non-monotonic, and
+100 binary episodes per benchmark are insufficient for a definitive small-gap
+claim. The result should be treated as a preliminary negative result until the
+canonical-only baseline, additional seeds, and stronger consistency weights
+are evaluated.
+
