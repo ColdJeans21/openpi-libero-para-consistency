@@ -99,13 +99,13 @@ run_goal() {
     --entrypoint /.venv/bin/python \
     libero:latest \
     /app/examples/libero/main.py \
-      --host localhost \
-      --port "${PORT}" \
-      --task-suite-name libero_goal \
-      --num-trials-per-task "${GOAL_TRIALS}" \
-      --seed "${SEED}" \
-      --video-out-path "${video_dir}" \
-      --summary-path "/app/reports/validation/${RUN_NAME}/step_${step}/libero_goal_seed${SEED}.json" \
+      --args.host localhost \
+      --args.port "${PORT}" \
+      --args.task-suite-name libero_goal \
+      --args.num-trials-per-task "${GOAL_TRIALS}" \
+      --args.seed "${SEED}" \
+      --args.video-out-path "${video_dir}" \
+      --args.summary-path "/app/reports/validation/${RUN_NAME}/step_${step}/libero_goal_seed${SEED}.json" \
       2>&1 | tee "${log}"
   require_file "${summary}"
 }
