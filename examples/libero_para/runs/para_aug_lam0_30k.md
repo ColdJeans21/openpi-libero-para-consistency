@@ -67,3 +67,16 @@ on the same seed-7 protocols used by the consistency run:
 - Backfill Goal SR, Para SR, and paraphrase gap into W&B using checkpoint step as
   the validation x-axis.
 
+## Training completion
+
+- Completed: 2026-11-02 11:07 Asia/Shanghai.
+- Final checkpoint: step 29999; retained checkpoints: 10000, 20000, 29999.
+- Final logged metrics at step 29900: total loss 0.0212, original FM loss
+  0.0211, paraphrase FM loss 0.0213, and diagnostic consistency loss 0.0002.
+- No OOM, NaN, checkpoint-save error, or abnormal termination was observed.
+
+Matched closed-loop validation was launched after training with the generic
+`scripts/run_libero_goal_para_validation.sh` orchestrator. Results are isolated
+under `reports/validation/para_aug_lam0_30k/` so they cannot overwrite the
+`lambda_cons=0.1` summaries.
+
