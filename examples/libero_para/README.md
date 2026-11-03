@@ -173,3 +173,34 @@ This logs `validation/libero_goal_success_rate`,
 with their actual checkpoint instead of being assigned to the latest training step.
 
 Official benchmark: <https://github.com/cau-hai-lab/LIBERO-Para>.
+
+## Controlled experiment v1 results
+
+The first A/B/C experiment is complete. Each checkpoint used seed 7,
+100 LIBERO-Goal episodes, and the same fixed 100-instruction LIBERO-Para
+manifest.
+
+| Step | Canonical Goal / Para | Augmentation (`lambda=0`) | Consistency (`lambda=0.1`) |
+|---:|---:|---:|---:|
+| 10000 | 35% / 11% | 36% / 15% | 39% / 14% |
+| 20000 | 50% / 7% | 41% / 13% | 44% / 21% |
+| 29999 | **84% / 21%** | **89% / 50%** | **84% / 43%** |
+
+At 30k, paired paraphrase augmentation improves the canonical-only baseline by
++29 pp Para, whereas `lambda=0.1` is 7 pp below the matched `lambda=0`
+control. This preliminary single-seed result supports augmentation but does not
+show an added benefit from the tested explicit consistency weight. See
+`runs/controlled_experiment_v1.md` for the full table, claim boundary, and
+interpretation.
+
+Run the next loss-scale ablations without adding duplicate static configs:
+
+```bash
+uv run scripts/train.py pi0_libero_goal_lora_consistency \
+  --model.consistency-loss-weight 1.0 \
+  --exp-name consistency_lam1_30k --keep-period 10000 --overwrite
+
+uv run scripts/train.py pi0_libero_goal_lora_consistency \
+  --model.consistency-loss-weight 10.0 \
+  --exp-name consistency_lam10_30k --keep-period 10000 --overwrite
+```

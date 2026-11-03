@@ -58,3 +58,34 @@ protocol:
 
 The primary A/B comparison is canonical-only versus `para_aug_lam0_30k`; the
 B/C comparison is `para_aug_lam0_30k` versus `consistency_lam01_30k`.
+
+## Training completion
+
+- Completed: 2026-11-03 08:33 Asia/Shanghai.
+- Final checkpoint: step 29999; retained checkpoints: 10000, 20000, 29999.
+- Final logged metrics at step 29900: total/original FM loss 0.0229,
+  gradient norm 0.5958, and parameter norm 1380.5803.
+- No OOM, NaN, checkpoint-save error, or abnormal termination was observed.
+
+Matched closed-loop validation ran with
+`scripts/run_libero_goal_para_validation.sh`. Each checkpoint used seed 7,
+100 LIBERO-Goal episodes, and the same fixed 100-instruction LIBERO-Para
+manifest. All results were backfilled to W&B run `qc7y5gh0`.
+
+## Matched closed-loop validation results
+
+| Step | Goal SR | Para SR | Goal−Para gap |
+|---:|---:|---:|---:|
+| 10000 | 35% | 11% | 24 pp |
+| 20000 | 50% | 7% | 43 pp |
+| 29999 | **84%** | **21%** | **63 pp** |
+
+At 30k, the matched `lambda=0` paired-prompt augmentation control reaches
+89% Goal / 50% Para, improving this canonical-only baseline by +5 pp Goal and
++29 pp Para while reducing the paraphrase gap by 24 pp. The `lambda=0.1`
+consistency run reaches 84% Goal / 43% Para, which is 5 pp Goal and 7 pp Para
+below the augmentation-only control. Thus the first controlled experiment
+supports training-time paraphrase augmentation, but provides no evidence that
+the tested explicit consistency weight adds value beyond shared action
+supervision. These are single-seed, 100-episode validation estimates and are
+not a substitute for multi-seed full-benchmark evaluation.
