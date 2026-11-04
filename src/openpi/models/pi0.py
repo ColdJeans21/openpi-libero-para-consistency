@@ -21,12 +21,25 @@ def paired_flow_matching_losses(
     velocity_alt: at.Float[at.Array, "b ah ad"],
     target_velocity: at.Float[at.Array, "b ah ad"],
     consistency_loss_weight: float,
+    loss_mode: str = "symmetric_fm",
 ) -> tuple[at.Float[at.Array, "b ah"], dict[str, at.Float[at.Array, "b ah"]]]:
-    """Combines two shared-coordinate flow losses and their consistency loss."""
+    """Combines shared-coordinate flow and prompt-consistency losses.
+
+    In ``symmetric_fm`` mode, both prompt branches receive the same FM target.
+    In ``teacher_consistency`` mode, only the canonical branch receives FM
+    supervision. The paraphrase branch instead matches a stop-gradient canonical
+    prediction, which isolates explicit invariance training from duplicated FM.
+    """
     loss_fm = jnp.mean(jnp.square(velocity - target_velocity), axis=-1)
     loss_fm_alt = jnp.mean(jnp.square(velocity_alt - target_velocity), axis=-1)
     loss_consistency = jnp.mean(jnp.square(velocity - velocity_alt), axis=-1)
-    loss_total = 0.5 * (loss_fm + loss_fm_alt) + consistency_loss_weight * loss_consistency
+    if loss_mode == "symmetric_fm":
+        loss_total = 0.5 * (loss_fm + loss_fm_alt) + consistency_loss_weight * loss_consistency
+    elif loss_mode == "teacher_consistency":
+        teacher_consistency = jnp.mean(jnp.square(jax.lax.stop_gradient(velocity) - velocity_alt), axis=-1)
+        loss_total = loss_fm + consistency_loss_weight * teacher_consistency
+    else:
+        raise ValueError(f"Unsupported paired loss mode: {loss_mode}")
     return loss_total, {
         "loss_fm_original": loss_fm,
         "loss_fm_paraphrase": loss_fm_alt,
@@ -88,6 +101,7 @@ class Pi0(_model.BaseModel):
         self.pi05 = config.pi05
         self.paired_prompt_training = config.paired_prompt_training
         self.consistency_loss_weight = config.consistency_loss_weight
+        self.paired_loss_mode = config.paired_loss_mode
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -248,9 +262,7 @@ class Pi0(_model.BaseModel):
                 key: jnp.concatenate([value, value], axis=0) for key, value in observation.image_masks.items()
             },
             state=jnp.concatenate([observation.state, observation.state], axis=0),
-            tokenized_prompt=jnp.concatenate(
-                [observation.tokenized_prompt, observation.tokenized_prompt_alt], axis=0
-            ),
+            tokenized_prompt=jnp.concatenate([observation.tokenized_prompt, observation.tokenized_prompt_alt], axis=0),
             tokenized_prompt_mask=jnp.concatenate(
                 [observation.tokenized_prompt_mask, observation.tokenized_prompt_alt_mask], axis=0
             ),
@@ -280,7 +292,13 @@ class Pi0(_model.BaseModel):
         paired_time = jnp.concatenate([time, time], axis=0)
         paired_velocity = self._predict_velocity(paired_observation, paired_x_t, paired_time)
         v_t, v_t_alt = jnp.split(paired_velocity, 2, axis=0)
-        return paired_flow_matching_losses(v_t, v_t_alt, u_t, self.consistency_loss_weight)
+        return paired_flow_matching_losses(
+            v_t,
+            v_t_alt,
+            u_t,
+            self.consistency_loss_weight,
+            self.paired_loss_mode,
+        )
 
     @override
     def sample_actions(

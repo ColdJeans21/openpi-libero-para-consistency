@@ -36,6 +36,10 @@ class Pi0Config(_model.BaseModelConfig):
     # the canonical prompt and a semantically equivalent prompt in one 2B forward.
     paired_prompt_training: bool = False
     consistency_loss_weight: float = 0.0
+    # symmetric_fm supervises both prompt branches with the shared FM target.
+    # teacher_consistency anchors only the canonical branch with FM and trains the
+    # paraphrase branch to match a stop-gradient canonical velocity prediction.
+    paired_loss_mode: str = "symmetric_fm"
 
     pytorch_compile_mode: str | None = "max-autotune"
 
@@ -48,6 +52,12 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("consistency_loss_weight must be non-negative")
         if self.consistency_loss_weight > 0 and not self.paired_prompt_training:
             raise ValueError("A positive consistency_loss_weight requires paired_prompt_training=True")
+        if self.paired_loss_mode not in {"symmetric_fm", "teacher_consistency"}:
+            raise ValueError(f"Unsupported paired_loss_mode: {self.paired_loss_mode}")
+        if self.paired_loss_mode != "symmetric_fm" and not self.paired_prompt_training:
+            raise ValueError("A non-default paired_loss_mode requires paired_prompt_training=True")
+        if self.paired_loss_mode == "teacher_consistency" and self.consistency_loss_weight == 0:
+            raise ValueError("teacher_consistency requires a positive consistency_loss_weight")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",

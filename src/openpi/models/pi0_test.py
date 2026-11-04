@@ -1,6 +1,7 @@
 import flax.nnx as nnx
 import jax
 import jax.numpy as jnp
+import pytest
 
 from openpi.models.pi0 import paired_flow_matching_losses
 import openpi.models.pi0_config as _pi0_config
@@ -81,6 +82,54 @@ def test_consistency_loss_produces_gradient():
 
     gradient = jax.grad(consistency_objective)(jnp.ones_like(target))
     assert jnp.linalg.norm(gradient) > 0
+
+
+def test_teacher_consistency_anchors_only_canonical_branch_with_flow_matching():
+    target = jnp.zeros((1, 2, 3))
+    velocity = jnp.ones_like(target)
+    velocity_alt = jnp.full_like(target, 2.0)
+
+    total, metrics = paired_flow_matching_losses(
+        velocity,
+        velocity_alt,
+        target,
+        0.1,
+        loss_mode="teacher_consistency",
+    )
+
+    assert jnp.allclose(metrics["loss_fm_original"], 1.0)
+    assert jnp.allclose(metrics["loss_fm_paraphrase"], 4.0)
+    assert jnp.allclose(metrics["loss_consistency"], 1.0)
+    assert jnp.allclose(total, 1.1)
+
+
+def test_teacher_consistency_stops_consistency_gradient_into_canonical_branch():
+    target = jnp.zeros((1, 2, 3))
+    velocity = jnp.ones_like(target)
+    velocity_alt = jnp.full_like(target, 2.0)
+
+    def objective(canonical, paraphrase):
+        total, _ = paired_flow_matching_losses(
+            canonical,
+            paraphrase,
+            target,
+            1.0,
+            loss_mode="teacher_consistency",
+        )
+        return jnp.mean(total)
+
+    canonical_grad, paraphrase_grad = jax.grad(objective, argnums=(0, 1))(velocity, velocity_alt)
+    fm_grad = jax.grad(lambda canonical: jnp.mean(jnp.square(canonical - target)))(velocity)
+
+    assert jnp.allclose(canonical_grad, fm_grad)
+    assert jnp.linalg.norm(paraphrase_grad) > 0
+
+
+def test_teacher_consistency_config_requires_paired_prompts_and_positive_weight():
+    with pytest.raises(ValueError, match="paired_prompt_training"):
+        _pi0_config.Pi0Config(paired_loss_mode="teacher_consistency", consistency_loss_weight=1.0)
+    with pytest.raises(ValueError, match="positive consistency_loss_weight"):
+        _pi0_config.Pi0Config(paired_prompt_training=True, paired_loss_mode="teacher_consistency")
 
 
 def test_paired_prompt_config_exposes_second_prompt_spec():

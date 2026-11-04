@@ -17,6 +17,23 @@ L_{cons}=\|v_\theta(x_\tau,\tau,l_1)-v_\theta(x_\tau,\tau,l_2)\|_2^2.
 The first version intentionally contains no negative/semantic-sensitivity loss.
 Therefore it supports claims about invariance to equivalent instructions only.
 
+Because both FM branches share the same target, the paired FM term already
+contains an implicit consistency penalty:
+
+\[
+\frac12(\|v_1-u\|^2+\|v_2-u\|^2)
+=\left\|\frac{v_1+v_2}{2}-u\right\|^2+\frac14\|v_1-v_2\|^2.
+\]
+
+The `teacher_consistency` loss mode isolates the explicit invariance objective:
+
+\[
+L_{teacher}=L_{FM}(v_1,u)+\lambda\|\operatorname{sg}(v_1)-v_2\|^2.
+\]
+
+Here the canonical branch is the FM anchor; the paraphrase branch receives no
+duplicate FM target and instead learns from the stop-gradient canonical velocity.
+
 ## Controlled experiment
 
 | Config | Prompt branches | `lambda_cons` | Purpose |
@@ -180,11 +197,11 @@ The first A/B/C experiment is complete. Each checkpoint used seed 7,
 100 LIBERO-Goal episodes, and the same fixed 100-instruction LIBERO-Para
 manifest.
 
-| Step | Canonical Goal / Para | Augmentation (`lambda=0`) | Consistency (`lambda=0.1`) |
-|---:|---:|---:|---:|
-| 10000 | 35% / 11% | 36% / 15% | 39% / 14% |
-| 20000 | 50% / 7% | 41% / 13% | 44% / 21% |
-| 29999 | **84% / 21%** | **89% / 50%** | **84% / 43%** |
+| Step | Canonical | Aug. (`lambda=0`) | Cons. (`lambda=0.1`) | Cons. (`lambda=1`) |
+|---:|---:|---:|---:|---:|
+| 10000 | 35% / 11% | 36% / 15% | 39% / 14% | 34% / 17% |
+| 20000 | 50% / 7% | 41% / 13% | 44% / 21% | 42% / 15% |
+| 29999 | **84% / 21%** | **89% / 50%** | **84% / 43%** | **90% / 52%** |
 
 At 30k, paired paraphrase augmentation improves the canonical-only baseline by
 +29 pp Para, whereas `lambda=0.1` is 7 pp below the matched `lambda=0`
@@ -192,6 +209,11 @@ control. This preliminary single-seed result supports augmentation but does not
 show an added benefit from the tested explicit consistency weight. See
 `runs/controlled_experiment_v1.md` for the full table, claim boundary, and
 interpretation.
+
+At `lambda=1`, the final result is 90% Goal / 52% Para, only +1/+2 pp over
+the matched `lambda=0` control. On the identical Para episodes, the paired
+McNemar test gives p=0.824. The explicit loss halves the diagnostic velocity
+difference but does not yet yield measurable behavioral improvement.
 
 Run the next loss-scale ablations without adding duplicate static configs:
 
@@ -203,4 +225,10 @@ uv run scripts/train.py pi0_libero_goal_lora_consistency \
 uv run scripts/train.py pi0_libero_goal_lora_consistency \
   --model.consistency-loss-weight 10.0 \
   --exp-name consistency_lam10_30k --keep-period 10000 --overwrite
+
+uv run scripts/train.py pi0_libero_goal_lora_consistency \
+  --model.paired-loss-mode teacher_consistency \
+  --model.consistency-loss-weight 1.0 \
+  --exp-name teacher_consistency_lam1_30k \
+  --keep-period 10000 --overwrite
 ```

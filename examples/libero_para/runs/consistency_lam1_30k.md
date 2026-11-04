@@ -52,3 +52,20 @@ After training, run the same seed-7 evaluation used by A/B/C:
 The λ=10 run will start only after this run and its validation finish, avoiding
 GPU contention and allowing λ=1 to act as the decision point for the stronger
 constraint.
+
+## Result
+
+Training completed on 2026-11-04 at step 29999. Matched seed-7 validation:
+
+| Step | Goal | Para | Gap |
+|---:|---:|---:|---:|
+| 10000 | 34% | 17% | 17 pp |
+| 20000 | 42% | 15% | 27 pp |
+| 29999 | **90%** | **52%** | **38 pp** |
+
+At the final checkpoint this is only +1 pp Goal / +2 pp Para over the
+lambda-zero paired augmentation control. On the same 100 Para episodes, λ=1
+repairs 11 λ=0 failures but loses 9 λ=0 successes (paired McNemar p=0.824).
+The training consistency loss falls from about `2e-4` at λ=0 to `1e-4`, so the
+regularizer changes the velocity diagnostic without a measurable incremental
+closed-loop benefit.
