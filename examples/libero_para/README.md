@@ -232,3 +232,13 @@ uv run scripts/train.py pi0_libero_goal_lora_consistency \
   --exp-name teacher_consistency_lam1_30k \
   --keep-period 10000 --overwrite
 ```
+
+The follow-up stop-gradient teacher lambda sweep stores its large checkpoints
+on the new SSD and runs `lambda=0.1` then `lambda=10` serially:
+
+```bash
+bash scripts/run_teacher_lambda_ablation_ssd.sh
+```
+
+See `runs/teacher_lambda_ablation_ssd.md` for the fixed controls, storage
+layout, validation protocol, and stopping rule.
