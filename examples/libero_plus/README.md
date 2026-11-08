@@ -31,6 +31,14 @@ Run the complete 410-instance comparison:
 bash scripts/run_libero_plus_language_eval.sh
 ```
 
+`RUN_SPECS_OVERRIDE` can restrict the evaluator to newline-delimited custom
+entries of the form `run_name|config_name|checkpoint_dir`. The teacher-lambda
+ablation uses this interface through
+`scripts/run_teacher_lambda_plus_followup.sh`: after the active lambda queue
+finishes matched Goal/Para validation, it evaluates the final lambda=0.1 and
+lambda=10 checkpoints on all 410 language instances. Lambda=1 reuses its
+already completed result in the same report root.
+
 Each model writes an append-only `episodes.jsonl` and an atomic `summary.json`
 under `reports/libero_plus_language/<run>/seed7/`.  Interrupted runs resume by
 skipping already recorded official task names.  The orchestrator runs

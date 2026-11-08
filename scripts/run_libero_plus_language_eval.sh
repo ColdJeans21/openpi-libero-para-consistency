@@ -21,12 +21,19 @@ else
 fi
 SERVER_PID=""
 
-RUN_SPECS=(
-  "canonical_30k|pi0_libero_goal_lora_canonical|${ROOT}/checkpoints/pi0_libero_goal_lora_canonical/canonical_30k/29999"
-  "para_aug_lam0_30k|pi0_libero_goal_lora_para_aug|${ROOT}/checkpoints/pi0_libero_goal_lora_para_aug/para_aug_lam0_30k/29999"
-  "consistency_lam1_30k|pi0_libero_goal_lora_consistency|${ROOT}/checkpoints/pi0_libero_goal_lora_consistency/consistency_lam1_30k/29999"
-  "teacher_consistency_lam1_30k|pi0_libero_goal_lora_consistency|${ROOT}/checkpoints/pi0_libero_goal_lora_consistency/teacher_consistency_lam1_30k/29999"
-)
+if [[ -n "${RUN_SPECS_OVERRIDE:-}" ]]; then
+  # One newline-delimited `run_name|config_name|checkpoint_dir` entry per run.
+  # Follow-up ablations can reuse the resumable evaluator without silently
+  # re-running the four-model reference comparison.
+  mapfile -t RUN_SPECS <<< "${RUN_SPECS_OVERRIDE}"
+else
+  RUN_SPECS=(
+    "canonical_30k|pi0_libero_goal_lora_canonical|${ROOT}/checkpoints/pi0_libero_goal_lora_canonical/canonical_30k/29999"
+    "para_aug_lam0_30k|pi0_libero_goal_lora_para_aug|${ROOT}/checkpoints/pi0_libero_goal_lora_para_aug/para_aug_lam0_30k/29999"
+    "consistency_lam1_30k|pi0_libero_goal_lora_consistency|${ROOT}/checkpoints/pi0_libero_goal_lora_consistency/consistency_lam1_30k/29999"
+    "teacher_consistency_lam1_30k|pi0_libero_goal_lora_consistency|${ROOT}/checkpoints/pi0_libero_goal_lora_consistency/teacher_consistency_lam1_30k/29999"
+  )
+fi
 
 timestamp() {
   date --iso-8601=seconds

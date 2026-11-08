@@ -55,7 +55,12 @@ Checkpoints 10000, 20000, and 29999 receive the same seed-7 matched
 LIBERO-Goal and fixed 100-instruction LIBERO-Para evaluation.  A final model is
 eligible only if Goal success is at least 87%.  Among eligible settings,
 LIBERO-Para is the development metric.  LIBERO-Plus remains an external
-language-generalization evaluation and is not used for repeated tuning.
+language-generalization evaluation and is not used for repeated tuning. For
+completeness, the final 30k checkpoints at lambda=0.1 and lambda=10 are queued
+for the full 410-case LIBERO-Plus Language evaluation after matched Goal/Para
+validation; lambda=1 reuses its existing complete result. Intermediate
+10k/20k checkpoints are intentionally excluded to avoid tuning against the
+external set.
 
 If both boundary settings underperform lambda one, the sweep stops.  If a
 boundary is best, add only the adjacent interpolation point (`0.3` or `3`).
