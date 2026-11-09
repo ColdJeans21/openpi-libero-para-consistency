@@ -109,7 +109,9 @@ run_smoke() {
   fi
   test -f "${target}/19/_CHECKPOINT_METADATA"
 
-  peak_mib=$(awk -F, 'NR > 1 {gsub(/ /, "", $2); if ($2 > peak) peak=$2} END {print peak+0}' "${memory_log}")
+  # Force numeric comparison: gsub() marks the field as a string in some awk
+  # implementations, which would otherwise compare values lexicographically.
+  peak_mib=$(awk -F, 'NR > 1 {value=$2+0; if (value > peak) peak=value} END {print peak+0}' "${memory_log}")
   cp "${memory_log}" "${target}/GPU_MEMORY_SMOKE.csv"
   cp "${RUN_MANIFEST}" "${target}/EXPERIMENT.md"
   printf 'peak_memory_mib=%s\nthreshold_mib=%s\n' "${peak_mib}" "${MAX_ALLOWED_PEAK_MIB}" \
