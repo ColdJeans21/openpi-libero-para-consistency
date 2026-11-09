@@ -144,3 +144,15 @@ class Pi0Config(_model.BaseModelConfig):
         if not filters:
             return nnx.Nothing
         return nnx.All(*filters)
+
+    def get_action_expert_only_freeze_filter(self) -> nnx.filterlib.Filter:
+        """Freeze the complete vision-language prefix while training the full action expert.
+
+        Pi0 stores the PaliGemma and action-expert transformer parameters in a
+        single ``PaliGemma/llm`` tree. Expert-specific leaves carry an ``_1``
+        component suffix (for example ``mlp_1`` and ``q_einsum_1``). The
+        projections outside ``PaliGemma`` are intentionally left trainable.
+        """
+        paligemma_params_filter = nnx_utils.PathRegex("PaliGemma/.*")
+        action_expert_params_filter = nnx_utils.PathRegex(".*llm.*_1.*")
+        return nnx.All(paligemma_params_filter, nnx.Not(action_expert_params_filter))

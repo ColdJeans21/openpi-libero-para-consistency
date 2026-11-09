@@ -809,6 +809,43 @@ _CONFIGS = [
         ).get_freeze_filter(),
         ema_decay=None,
     ),
+    # Parameter-scope ablation for the stop-gradient teacher objective. The
+    # complete SigLIP + Gemma-2B prefix is frozen; the full Gemma-300M action
+    # expert and all action/state/time projections are trainable without LoRA.
+    TrainConfig(
+        name="pi0_libero_goal_teacher_expert_full",
+        model=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+            paired_prompt_training=True,
+            paired_loss_mode="teacher_consistency",
+            consistency_loss_weight=1.0,
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+            paired_prompt_training=True,
+            paired_loss_mode="teacher_consistency",
+            consistency_loss_weight=1.0,
+        ).get_action_expert_only_freeze_filter(),
+        ema_decay=None,
+    ),
     TrainConfig(
         name="pi0_fast_libero",
         # Here is an example of loading a pi0-FAST model for full finetuning.
@@ -873,6 +910,43 @@ _CONFIGS = [
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
         pytorch_weight_path="/path/to/your/pytorch_weight_path",
         num_train_steps=30_000,
+    ),
+    TrainConfig(
+        # LoRA (low-memory) variant of pi05_libero, for GPUs where full finetuning does not fit
+        # (full finetuning of pi0.5 needs ~60GB; this trains only the LoRA adapters).
+        name="pi05_libero_low_mem_finetune",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            base_config=DataConfig(prompt_from_task=True),
+            extra_delta_transform=False,
+        ),
+        batch_size=256,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        num_train_steps=30_000,
+        # Freeze everything except the LoRA adapter parameters.
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
+        # EMA is not supported for LoRA finetuning.
+        ema_decay=None,
     ),
     #
     # Fine-tuning Aloha configs.

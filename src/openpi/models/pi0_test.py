@@ -49,6 +49,30 @@ def test_pi0_all_lora():
     assert all("llm" in p for p in state)
 
 
+def test_pi0_action_expert_only_freezes_complete_vision_language_prefix():
+    config = _pi0_config.Pi0Config(
+        action_horizon=10,
+        paligemma_variant="gemma_2b",
+        action_expert_variant="gemma_300m",
+        paired_prompt_training=True,
+        paired_loss_mode="teacher_consistency",
+        consistency_loss_weight=1.0,
+    )
+    abstract_model = nnx.eval_shape(config.create, jax.random.key(0))
+    params = nnx.state(abstract_model, nnx.Param)
+    frozen = params.filter(config.get_action_expert_only_freeze_filter()).flat_state()
+    trainable = params.filter(nnx.Not(config.get_action_expert_only_freeze_filter())).flat_state()
+
+    def is_action_expert_path(path):
+        return "llm" in path and any(str(component).endswith("_1") for component in path)
+
+    assert all(path[0] == "PaliGemma" for path in frozen)
+    assert all(not is_action_expert_path(path) for path in frozen)
+    assert all(path[0] != "PaliGemma" or is_action_expert_path(path) for path in trainable)
+    trainable_count = sum(parameter.value.size for parameter in trainable.values())
+    assert trainable_count == 314_713_120
+
+
 def test_paired_flow_matching_losses_share_one_target():
     target = jnp.zeros((2, 3, 4))
     velocity = jnp.ones_like(target)
