@@ -15,7 +15,10 @@ ORCHESTRATOR_LOG="${ROOT}/logs/teacher_expert_full_ssd_orchestrator.log"
 RUN_MANIFEST="${ROOT}/examples/libero_para/runs/teacher_expert_full_ssd.md"
 MAX_ALLOWED_PEAK_MIB="${MAX_ALLOWED_PEAK_MIB:-23500}"
 MIN_FREE_GIB="${MIN_FREE_GIB:-200}"
-TRAIN_WANDB_MODE="${TRAIN_WANDB_MODE:-offline}"
+# Default future runs to live W&B logging now that credentials are available.
+# The currently running experiment was started offline and is synced by its
+# completion watcher instead.
+TRAIN_WANDB_MODE="${TRAIN_WANDB_MODE:-online}"
 MONITOR_PID=""
 
 timestamp() {

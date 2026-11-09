@@ -13,10 +13,9 @@ REPO_CONFIG_ROOT="${ROOT}/checkpoints/${CONFIG_NAME}"
 LOG_ROOT="${ROOT}/logs/teacher_lambda_ablation_ssd"
 RUN_MANIFEST="${ROOT}/examples/libero_para/runs/teacher_lambda_ablation_ssd.md"
 MIN_FREE_GIB="${MIN_FREE_GIB:-200}"
-# W&B authentication currently returns HTTP 403.  Offline mode preserves the
-# complete metric stream and run id for a later `wandb sync` without blocking
-# a multi-hour GPU job.  Set TRAIN_WANDB_MODE=online after credentials recover.
-TRAIN_WANDB_MODE="${TRAIN_WANDB_MODE:-offline}"
+# W&B credentials are available again. Keep the override so a deliberately
+# offline run can still be requested without editing this script.
+TRAIN_WANDB_MODE="${TRAIN_WANDB_MODE:-online}"
 
 RUN_SPECS=(
   "teacher_consistency_lam01_30k|0.1"
