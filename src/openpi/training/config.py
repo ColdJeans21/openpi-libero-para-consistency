@@ -846,6 +846,42 @@ _CONFIGS = [
         ).get_action_expert_only_freeze_filter(),
         ema_decay=None,
     ),
+    # Controlled follow-up: keep SigLIP and the Gemma-2B base frozen, add only
+    # Gemma-2B language LoRA adapters to the fully trainable Action Expert.
+    TrainConfig(
+        name="pi0_libero_goal_teacher_vlm_lora_expert_full",
+        model=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m",
+            paired_prompt_training=True,
+            paired_loss_mode="teacher_consistency",
+            consistency_loss_weight=1.0,
+        ),
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi0_base/params"),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=pi0_config.Pi0Config(
+            action_horizon=10,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m",
+            paired_prompt_training=True,
+            paired_loss_mode="teacher_consistency",
+            consistency_loss_weight=1.0,
+        ).get_vlm_lora_full_action_expert_freeze_filter(),
+        ema_decay=None,
+    ),
     TrainConfig(
         name="pi0_fast_libero",
         # Here is an example of loading a pi0-FAST model for full finetuning.

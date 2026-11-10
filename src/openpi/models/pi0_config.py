@@ -156,3 +156,25 @@ class Pi0Config(_model.BaseModelConfig):
         paligemma_params_filter = nnx_utils.PathRegex("PaliGemma/.*")
         action_expert_params_filter = nnx_utils.PathRegex(".*llm.*_1.*")
         return nnx.All(paligemma_params_filter, nnx.Not(action_expert_params_filter))
+
+    def get_vlm_lora_full_action_expert_freeze_filter(self) -> nnx.filterlib.Filter:
+        """Train language LoRA adapters together with the full action expert.
+
+        This deliberately freezes SigLIP and the Gemma-2B base parameters. The
+        only trainable leaves inside ``PaliGemma`` are Gemma-2B LoRA adapters
+        and the full ``_1`` action-expert tree; action/state/time projections
+        outside ``PaliGemma`` remain trainable.
+        """
+        if "lora" not in self.paligemma_variant:
+            raise ValueError("VLM LoRA + full Action Expert requires a LoRA PaliGemma variant")
+        if "lora" in self.action_expert_variant:
+            raise ValueError("VLM LoRA + full Action Expert requires a non-LoRA action expert variant")
+
+        paligemma_params_filter = nnx_utils.PathRegex("PaliGemma/.*")
+        action_expert_params_filter = nnx_utils.PathRegex(".*llm.*_1.*")
+        lora_params_filter = nnx_utils.PathRegex(".*lora.*")
+        return nnx.All(
+            paligemma_params_filter,
+            nnx.Not(action_expert_params_filter),
+            nnx.Not(lora_params_filter),
+        )
