@@ -178,3 +178,17 @@ class Pi0Config(_model.BaseModelConfig):
             nnx.Not(action_expert_params_filter),
             nnx.Not(lora_params_filter),
         )
+
+    def get_strict_lora_freeze_filter(self) -> nnx.filterlib.Filter:
+        """Freeze all PaliGemma base weights and train only LoRA adapters.
+
+        Unlike ``get_freeze_filter``, this also freezes the complete SigLIP
+        image encoder. Projection layers outside ``PaliGemma`` remain
+        trainable so the resulting policy retains the standard Pi0 interface.
+        """
+        if "lora" not in self.paligemma_variant or "lora" not in self.action_expert_variant:
+            raise ValueError("Strict LoRA requires LoRA variants for both PaliGemma and the Action Expert")
+        return nnx.All(
+            nnx_utils.PathRegex("PaliGemma/.*"),
+            nnx.Not(nnx_utils.PathRegex(".*lora.*")),
+        )
