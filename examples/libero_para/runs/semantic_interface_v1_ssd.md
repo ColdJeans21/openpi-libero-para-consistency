@@ -67,3 +67,31 @@ W&B training: loss, canonical/para FM diagnostics, consistency, gradient/paramet
 norms; `semantic/code_distance`, `semantic/base_rms`, `semantic/residual_rms`,
 and `semantic/basis_rms`. A successful smoke test is not evidence of task success.
 Inferential results remain single-seed exploratory results.
+
+## Verified smoke results (2026-11-12, Asia/Shanghai)
+
+- Focused Python tests: 41 passed across the new interface, existing flow loss,
+  transforms, and cached/fake data loading. The unrelated ALOHA download test
+  was excluded. Ruff lint/format and shell syntax checks passed.
+- Both configurations completed 20 real LIBERO-Goal training steps on two
+  RTX 3090 Ti cards and saved checkpoint 19 on the SSD.
+
+| Smoke run | Peak GPU memory (MiB) | Step 0 loss | Step 19 loss | Different-task max action delta |
+| --- | ---: | ---: | ---: | ---: |
+| semantic_interface_r16_fm_smoke20 | 22306 | 0.2355 | 0.1602 | 0.00152998 |
+| semantic_interface_r16_teacher_lam1_smoke20 | 22296 | 0.2355 | 0.1609 | 0.00113088 |
+
+- Each saved policy reloaded successfully, returned finite `(10, 7)` actions,
+  reproduced exactly with fixed noise, and accepted an unseen instruction via
+  frozen CPU T5 encoding without modifying the training feature cache.
+- The different-task delta is a synthetic-input plumbing check, not evidence
+  of correct target selection or closed-loop task performance.
+- Cache SHA-256:
+  `ee952c33f52849ef9297c72a5c54b65e2068d8fe982832e3fa7f0ea54e1fdb8f`.
+- Smoke artifacts and memory traces are stored under the corresponding
+  `/data/openpi_checkpoints/<config>/<smoke_run>/` directories. The orchestrator
+  preflight was rerun successfully after both pass markers were written.
+- Full-run command: `bash scripts/run_semantic_interface_ssd.sh full`.
+  Execution order: FM 30k -> its Goal/Para/Plus evaluations -> Teacher 30k ->
+  its Goal/Para/Plus evaluations. Full checkpoints are separately labeled and
+  never overwrite prior experiments.

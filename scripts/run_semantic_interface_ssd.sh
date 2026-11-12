@@ -101,11 +101,15 @@ full() {
     bash scripts/run_libero_goal_para_validation.sh
   env RUN_SPECS_OVERRIDE="${run}|${cfg}|${ROOT}/checkpoints/${cfg}/${run}/29999" \
     bash scripts/run_libero_plus_language_eval.sh
-  uv run scripts/log_validation_to_wandb.py --checkpoint-dir "${target}" --checkpoint-step 29999 \
+  if uv run scripts/log_validation_to_wandb.py --checkpoint-dir "${target}" --checkpoint-step 29999 \
     --libero-goal-summary "reports/validation/${run}/step_29999/libero_goal_seed7.json" \
     --libero-para-summary "reports/validation/${run}/step_29999/libero_para_seed7/summary.json" \
     --libero-plus-summary "reports/libero_plus_language/${run}/seed7/summary.json" \
-    --entity xzzsryouxiwang-shenzhen-university
+    --entity xzzsryouxiwang-shenzhen-university; then
+    date --iso-8601=seconds > "${target}/PLUS_WANDB_LOGGED.txt"
+  else
+    log "${run}: W&B Plus backfill failed; local evaluation retained for retry"
+  fi
   log "${run}: training and all evaluations complete"
 }
 
