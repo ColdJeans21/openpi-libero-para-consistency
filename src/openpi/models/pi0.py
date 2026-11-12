@@ -38,6 +38,8 @@ def paired_flow_matching_losses(
     elif loss_mode == "teacher_consistency":
         teacher_consistency = jnp.mean(jnp.square(jax.lax.stop_gradient(velocity) - velocity_alt), axis=-1)
         loss_total = loss_fm + consistency_loss_weight * teacher_consistency
+    elif loss_mode == "canonical_fm":
+        loss_total = loss_fm
     else:
         raise ValueError(f"Unsupported paired loss mode: {loss_mode}")
     return loss_total, {
@@ -102,6 +104,7 @@ class Pi0(_model.BaseModel):
         self.paired_prompt_training = config.paired_prompt_training
         self.consistency_loss_weight = config.consistency_loss_weight
         self.paired_loss_mode = config.paired_loss_mode
+        self.semantic_rank = config.semantic_rank
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -133,6 +136,15 @@ class Pi0(_model.BaseModel):
             self.action_time_mlp_in = nnx.Linear(2 * action_expert_config.width, action_expert_config.width, rngs=rngs)
             self.action_time_mlp_out = nnx.Linear(action_expert_config.width, action_expert_config.width, rngs=rngs)
         self.action_out_proj = nnx.Linear(action_expert_config.width, config.action_dim, rngs=rngs)
+        if self.semantic_rank:
+            self.semantic_language_proj = nnx.Linear(config.semantic_feature_dim, self.semantic_rank, rngs=rngs)
+            self.semantic_basis_head = nnx.Linear(
+                action_expert_config.width,
+                config.action_dim * self.semantic_rank,
+                kernel_init=nnx.initializers.zeros_init(),
+                bias_init=nnx.initializers.zeros_init(),
+                rngs=rngs,
+            )
 
         # This attribute gets automatically set by model.train() and model.eval().
         self.deterministic = True
@@ -160,10 +172,19 @@ class Pi0(_model.BaseModel):
             ar_mask += [False] * image_tokens.shape[1]
 
         # add language (aka tokenized inputs)
-        if obs.tokenized_prompt is not None:
-            tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
+        if obs.tokenized_prompt is not None or self.semantic_rank:
+            if self.semantic_rank:
+                # Fixed PaliGemma encoding of "perform the task\n" (BOS included).
+                # Ignore supplied token IDs AND lengths: task text must not leak
+                # through embeddings, padding masks, or downstream RoPE positions.
+                neutral_ids = jnp.broadcast_to(jnp.array([2, 34688, 573, 6911, 108]), (obs.state.shape[0], 5))
+                tokenized_inputs = self.PaliGemma.llm(neutral_ids, method="embed")
+                text_mask = jnp.ones(neutral_ids.shape, dtype=jnp.bool_)
+            else:
+                tokenized_inputs = self.PaliGemma.llm(obs.tokenized_prompt, method="embed")
+                text_mask = obs.tokenized_prompt_mask
             tokens.append(tokenized_inputs)
-            input_mask.append(obs.tokenized_prompt_mask)
+            input_mask.append(text_mask)
             # full attention between image and language inputs
             ar_mask += [False] * tokenized_inputs.shape[1]
         tokens = jnp.concatenate(tokens, axis=1)
@@ -234,6 +255,10 @@ class Pi0(_model.BaseModel):
         time: at.Float[at.Array, " b"],
     ) -> _model.Actions:
         """Predicts the flow velocity at an already constructed flow coordinate."""
+        hidden = self._predict_action_hidden(observation, x_t, time)
+        return self._velocity_from_hidden(hidden, observation.semantic_features)
+
+    def _predict_action_hidden(self, observation, x_t, time):
         prefix_tokens, prefix_mask, prefix_ar_mask = self.embed_prefix(observation)
         suffix_tokens, suffix_mask, suffix_ar_mask, adarms_cond = self.embed_suffix(observation, x_t, time)
         input_mask = jnp.concatenate([prefix_mask, suffix_mask], axis=1)
@@ -243,7 +268,24 @@ class Pi0(_model.BaseModel):
         (_, suffix_out), _ = self.PaliGemma.llm(
             [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
         )
-        return self.action_out_proj(suffix_out[:, -self.action_horizon :])
+        return suffix_out[:, -self.action_horizon :]
+
+    def _semantic_code(self, features):
+        if features is None:
+            raise ValueError("Semantic-interface Pi0 requires frozen semantic_features")
+        code = self.semantic_language_proj(features).astype(jnp.float32)
+        return code / jnp.maximum(jnp.linalg.norm(code, axis=-1, keepdims=True), 1e-6)
+
+    def _velocity_components(self, hidden):
+        base = self.action_out_proj(hidden)
+        basis = self.semantic_basis_head(hidden).reshape(*hidden.shape[:-1], self.action_dim, self.semantic_rank)
+        return base, basis
+
+    def _velocity_from_hidden(self, hidden, semantic_features=None):
+        if not self.semantic_rank:
+            return self.action_out_proj(hidden)
+        base, basis = self._velocity_components(hidden)
+        return base + jnp.einsum("bhdr,br->bhd", basis, self._semantic_code(semantic_features))
 
     def _make_paired_observation(self, observation: _model.Observation) -> _model.Observation:
         if observation.tokenized_prompt_alt is None or observation.tokenized_prompt_alt_mask is None:
@@ -281,6 +323,31 @@ class Pi0(_model.BaseModel):
         time_expanded = time[..., None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
+
+        if self.semantic_rank:
+            hidden = self._predict_action_hidden(observation, x_t, time)
+            base, basis = self._velocity_components(hidden)
+            code = self._semantic_code(observation.semantic_features)
+            residual = jnp.einsum("bhdr,br->bhd", basis, code)
+            velocity = base + residual
+            if self.paired_prompt_training:
+                code_alt = self._semantic_code(observation.semantic_features_alt)
+                velocity_alt = base + jnp.einsum("bhdr,br->bhd", basis, code_alt)
+                loss, metrics = paired_flow_matching_losses(
+                    velocity, velocity_alt, u_t, self.consistency_loss_weight, self.paired_loss_mode
+                )
+                metrics["semantic/code_distance"] = jnp.mean(jnp.square(code - code_alt))
+            else:
+                loss = jnp.mean(jnp.square(velocity - u_t), axis=-1)
+                metrics = {"loss_fm_original": loss, "loss_total": loss}
+            metrics.update(
+                {
+                    "semantic/base_rms": jnp.sqrt(jnp.mean(jnp.square(base))),
+                    "semantic/residual_rms": jnp.sqrt(jnp.mean(jnp.square(residual))),
+                    "semantic/basis_rms": jnp.sqrt(jnp.mean(jnp.square(basis))),
+                }
+            )
+            return loss, metrics
 
         if not self.paired_prompt_training:
             v_t = self._predict_velocity(observation, x_t, time)
@@ -353,7 +420,7 @@ class Pi0(_model.BaseModel):
                 adarms_cond=[None, adarms_cond],
             )
             assert prefix_out is None
-            v_t = self.action_out_proj(suffix_out[:, -self.action_horizon :])
+            v_t = self._velocity_from_hidden(suffix_out[:, -self.action_horizon :], observation.semantic_features)
 
             return x_t + dt * v_t, time + dt
 

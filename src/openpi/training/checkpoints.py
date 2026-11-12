@@ -4,6 +4,8 @@ import asyncio
 import concurrent.futures as futures
 import dataclasses
 import logging
+import pathlib
+import shutil
 from typing import Protocol
 
 from etils import epath
@@ -74,6 +76,8 @@ def save_state(
         norm_stats = data_config.norm_stats
         if norm_stats is not None and data_config.asset_id is not None:
             _normalize.save(directory / data_config.asset_id, norm_stats)
+        if data_config.semantic_cache_path is not None:
+            shutil.copyfile(data_config.semantic_cache_path, pathlib.Path(directory) / "semantic_features.npz")
 
     # Split params that can be used for inference into a separate item.
     with at.disable_typechecking():

@@ -41,6 +41,12 @@ class Pi0Config(_model.BaseModelConfig):
     # paraphrase branch to match a stop-gradient canonical velocity prediction.
     paired_loss_mode: str = "symmetric_fm"
 
+    # Opt-in factorized velocity: visual/state flow + U(visual/state flow) z(text).
+    # Text features are computed by a frozen, independently versioned encoder.
+    semantic_rank: int = 0
+    semantic_feature_dim: int = 1024
+    semantic_cache_path: str = "assets/semantic_interface/t5_large_train_v1.npz"
+
     pytorch_compile_mode: str | None = "max-autotune"
 
     def __post_init__(self):
@@ -52,12 +58,18 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("consistency_loss_weight must be non-negative")
         if self.consistency_loss_weight > 0 and not self.paired_prompt_training:
             raise ValueError("A positive consistency_loss_weight requires paired_prompt_training=True")
-        if self.paired_loss_mode not in {"symmetric_fm", "teacher_consistency"}:
+        if self.paired_loss_mode not in {"symmetric_fm", "teacher_consistency", "canonical_fm"}:
             raise ValueError(f"Unsupported paired_loss_mode: {self.paired_loss_mode}")
         if self.paired_loss_mode != "symmetric_fm" and not self.paired_prompt_training:
             raise ValueError("A non-default paired_loss_mode requires paired_prompt_training=True")
         if self.paired_loss_mode == "teacher_consistency" and self.consistency_loss_weight == 0:
             raise ValueError("teacher_consistency requires a positive consistency_loss_weight")
+        if self.paired_loss_mode == "canonical_fm" and self.consistency_loss_weight != 0:
+            raise ValueError("canonical_fm requires zero consistency weight")
+        if self.semantic_rank < 0 or self.semantic_feature_dim <= 0:
+            raise ValueError("Semantic rank must be non-negative and feature dimension positive")
+        if self.semantic_rank and self.pi05:
+            raise ValueError("The initial semantic-interface experiment supports continuous-state Pi0 only")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",
@@ -107,6 +119,16 @@ class Pi0Config(_model.BaseModelConfig):
                 tokenized_prompt_alt_mask=(
                     jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool)
                     if self.paired_prompt_training
+                    else None
+                ),
+                semantic_features=(
+                    jax.ShapeDtypeStruct([batch_size, self.semantic_feature_dim], jnp.float32)
+                    if self.semantic_rank
+                    else None
+                ),
+                semantic_features_alt=(
+                    jax.ShapeDtypeStruct([batch_size, self.semantic_feature_dim], jnp.float32)
+                    if self.semantic_rank and self.paired_prompt_training
                     else None
                 ),
             )

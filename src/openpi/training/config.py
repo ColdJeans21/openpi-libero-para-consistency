@@ -94,6 +94,8 @@ class DataConfig:
     data_transforms: _transforms.Group = dataclasses.field(default_factory=_transforms.Group)
     # Model specific transforms. Will be applied after the data is normalized.
     model_transforms: _transforms.Group = dataclasses.field(default_factory=_transforms.Group)
+    # Small immutable frozen-text feature asset copied into every checkpoint.
+    semantic_cache_path: str | None = None
     # If true, will use quantile normalization. Otherwise, normal z-score normalization will be used.
     use_quantile_norm: bool = False
 
@@ -140,6 +142,15 @@ class ModelTransformFactory(GroupFactory):
                     inputs=[
                         _transforms.InjectDefaultPrompt(self.default_prompt),
                         _transforms.ResizeImages(224, 224),
+                        *(
+                            [
+                                _transforms.SemanticPromptFeatures(
+                                    model_config.semantic_cache_path, model_config.semantic_feature_dim
+                                )
+                            ]
+                            if isinstance(model_config, pi0_config.Pi0Config) and model_config.semantic_rank
+                            else []
+                        ),
                         _transforms.TokenizePrompt(
                             _tokenizer.PaligemmaTokenizer(model_config.max_token_len),
                         ),
@@ -330,7 +341,11 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
                         "observation/state": "state",
                         "actions": "actions",
                         "prompt": "prompt",
-                        **({"prompt_alt": "prompt_alt"} if getattr(model_config, "paired_prompt_training", False) else {}),
+                        **(
+                            {"prompt_alt": "prompt_alt"}
+                            if getattr(model_config, "paired_prompt_training", False)
+                            else {}
+                        ),
                     }
                 )
             ]
@@ -581,7 +596,46 @@ class TrainConfig:
 
 
 # Use `get_config` if you need to get a config by name in your code.
+def _semantic_interface_config(name: str, weight: float) -> TrainConfig:
+    model = pi0_config.Pi0Config(
+        action_horizon=10,
+        paligemma_variant="gemma_2b_lora",
+        action_expert_variant="gemma_300m_lora",
+        semantic_rank=16,
+        paired_prompt_training=True,
+        paired_loss_mode="teacher_consistency" if weight else "canonical_fm",
+        consistency_loss_weight=weight,
+    )
+    return TrainConfig(
+        name=name,
+        model=model,
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+                semantic_cache_path=model.semantic_cache_path,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi0_base/params",
+            missing_regex=".*lora.*|semantic_language_proj/.*|semantic_basis_head/.*",
+        ),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=model.get_freeze_filter(),
+        ema_decay=None,
+        policy_metadata={"architecture": "semantic_interface_v1", "semantic_rank": 16, "consistency_weight": weight},
+    )
+
+
 _CONFIGS = [
+    _semantic_interface_config("pi0_libero_goal_semantic_fm", 0.0),
+    _semantic_interface_config("pi0_libero_goal_semantic_teacher", 1.0),
     #
     # Inference Aloha configs.
     #

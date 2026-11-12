@@ -11,6 +11,7 @@ from openpi_client import image_tools
 from openpi.models import tokenizer as _tokenizer
 from openpi.shared import array_typing as at
 from openpi.shared import normalize as _normalize
+from openpi.shared import semantic_text
 
 DataDict: TypeAlias = at.PyTree
 NormStats: TypeAlias = _normalize.NormStats
@@ -242,6 +243,25 @@ class AbsoluteActions(DataTransformFn):
         data["actions"] = actions
 
         return data
+
+
+@dataclasses.dataclass(frozen=True)
+class SemanticPromptFeatures(DataTransformFn):
+    cache_path: str
+    feature_dim: int = 1024
+    allow_online: bool = False
+
+    def _encode(self, prompt: str) -> np.ndarray:
+        return semantic_text.prompt_feature(self.cache_path, prompt, self.feature_dim, allow_online=self.allow_online)
+
+    def __call__(self, data: DataDict) -> DataDict:
+        result = dict(data)
+        for prompt_key, feature_key in (("prompt", "semantic_features"), ("prompt_alt", "semantic_features_alt")):
+            if prompt_key in result:
+                prompt = result[prompt_key]
+                result[feature_key] = self._encode(prompt if isinstance(prompt, str) else prompt.item()).copy()
+                result[prompt_key] = "perform the task"
+        return result
 
 
 @dataclasses.dataclass(frozen=True)

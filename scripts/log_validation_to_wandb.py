@@ -55,9 +55,7 @@ def load_para_metrics(path: Path) -> dict[str, float]:
                 category_rate = float(result)
             elif isinstance(result, dict):
                 try:
-                    category_rate = _first_number(
-                        result, ("success_rate", "overall_success_rate", "mean"), source=path
-                    )
+                    category_rate = _first_number(result, ("success_rate", "overall_success_rate", "mean"), source=path)
                 except KeyError:
                     continue
             else:
@@ -67,12 +65,26 @@ def load_para_metrics(path: Path) -> dict[str, float]:
     return metrics
 
 
+def load_plus_metrics(path: Path) -> dict[str, float]:
+    data = _read_json(path)
+    if data.get("complete") is not True or data.get("total_episodes") != data.get("expected_episodes"):
+        raise ValueError(f"Refusing incomplete LIBERO-Plus evaluation: {path}")
+    metrics = {
+        "validation/libero_plus_language_success_rate": _first_number(data, ("success_rate",), source=path),
+        "validation/libero_plus_language_episodes": float(data["total_episodes"]),
+    }
+    for level, result in data.get("per_difficulty", {}).items():
+        metrics[f"validation/libero_plus_language_difficulty/{level}"] = float(result["success_rate"])
+    return metrics
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint-dir", type=Path, required=True)
     parser.add_argument("--checkpoint-step", type=int, required=True)
     parser.add_argument("--libero-goal-summary", type=Path, required=True)
     parser.add_argument("--libero-para-summary", type=Path, required=True)
+    parser.add_argument("--libero-plus-summary", type=Path)
     parser.add_argument("--project", default="openpi")
     parser.add_argument("--entity", default=None)
     args = parser.parse_args()
@@ -89,6 +101,8 @@ def main() -> None:
     metrics["validation/paraphrase_gap"] = (
         metrics["validation/libero_goal_success_rate"] - metrics["validation/libero_para_success_rate"]
     )
+    if args.libero_plus_summary is not None:
+        metrics.update(load_plus_metrics(args.libero_plus_summary))
 
     run = wandb.init(
         id=run_id_path.read_text(encoding="utf-8").strip(),
@@ -103,6 +117,10 @@ def main() -> None:
     run.summary["latest_libero_goal_success_rate"] = metrics["validation/libero_goal_success_rate"]
     run.summary["latest_libero_para_success_rate"] = metrics["validation/libero_para_success_rate"]
     run.summary["latest_paraphrase_gap"] = metrics["validation/paraphrase_gap"]
+    if args.libero_plus_summary is not None:
+        run.summary["latest_libero_plus_language_success_rate"] = metrics[
+            "validation/libero_plus_language_success_rate"
+        ]
     run.finish()
 
     print(json.dumps(metrics, indent=2, sort_keys=True))

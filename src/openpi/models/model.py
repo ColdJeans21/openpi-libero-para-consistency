@@ -106,6 +106,10 @@ class Observation(Generic[ArrayT]):
     tokenized_prompt_alt: at.Int[ArrayT, "*b l"] | None = None
     tokenized_prompt_alt_mask: at.Bool[ArrayT, "*b l"] | None = None
 
+    # Independently encoded, frozen text features for the factorized Pi0 interface.
+    semantic_features: at.Float[ArrayT, "*b e"] | None = None
+    semantic_features_alt: at.Float[ArrayT, "*b e"] | None = None
+
     # pi0-fast model specific fields.
 
     # Token auto-regressive mask (for FAST autoregressive model).
@@ -135,6 +139,8 @@ class Observation(Generic[ArrayT]):
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
             tokenized_prompt_alt=data.get("tokenized_prompt_alt"),
             tokenized_prompt_alt_mask=data.get("tokenized_prompt_alt_mask"),
+            semantic_features=data.get("semantic_features"),
+            semantic_features_alt=data.get("semantic_features_alt"),
             token_ar_mask=data.get("token_ar_mask"),
             token_loss_mask=data.get("token_loss_mask"),
         )
@@ -216,6 +222,8 @@ def preprocess_observation(
         tokenized_prompt_mask=observation.tokenized_prompt_mask,
         tokenized_prompt_alt=observation.tokenized_prompt_alt,
         tokenized_prompt_alt_mask=observation.tokenized_prompt_alt_mask,
+        semantic_features=observation.semantic_features,
+        semantic_features_alt=observation.semantic_features_alt,
         token_ar_mask=observation.token_ar_mask,
         token_loss_mask=observation.token_loss_mask,
     )

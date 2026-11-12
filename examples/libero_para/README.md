@@ -242,3 +242,25 @@ bash scripts/run_teacher_lambda_ablation_ssd.sh
 
 See `runs/teacher_lambda_ablation_ssd.md` for the fixed controls, storage
 layout, validation protocol, and stopping rule.
+
+## Factorized semantic-interface architecture experiment
+
+The opt-in rank-16 Pi0 variant predicts `velocity = visual_state_base + U z(text)`.
+Its task-independent trunk uses a fixed neutral prompt; frozen T5 features enter
+only through the 16-dimensional semantic code. The controlled pair compares
+canonical FM alone against canonical FM plus stop-gradient Teacher consistency
+at lambda 1. Both train complete SigLIP plus VLM/Expert LoRA and projection heads.
+
+Prepare local T5-large weights and the **training-only** text feature asset, then run:
+
+```bash
+uv run scripts/build_semantic_text_cache.py --model-dir /data/openpi_models/t5-large
+bash scripts/run_semantic_interface_ssd.sh all
+```
+
+The runner requires real-data smoke training and checkpoint-reload inference to
+pass for both configurations before launching the two 30k runs serially. Large
+checkpoints stay on `/data`. Goal/Para checkpoint evaluations and final Plus
+Language evaluation follow each training run and are logged to W&B.
+See [the locked experiment manifest](runs/semantic_interface_v1_ssd.md) for
+parameter counts, asset provenance, evaluation limits, and run names.

@@ -1,3 +1,4 @@
+import dataclasses
 import logging
 import os
 import pathlib
@@ -56,6 +57,22 @@ def create_trained_policy(
     else:
         model = train_config.model.load(_model.restore_params(checkpoint_dir / "params", dtype=jnp.bfloat16))
     data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
+    if getattr(train_config.model, "semantic_rank", 0):
+        semantic_asset = checkpoint_dir / "assets" / "semantic_features.npz"
+        if not semantic_asset.exists():
+            raise FileNotFoundError(f"Semantic checkpoint is missing frozen text features: {semantic_asset}")
+        data_config = dataclasses.replace(
+            data_config,
+            model_transforms=dataclasses.replace(
+                data_config.model_transforms,
+                inputs=[
+                    dataclasses.replace(transform, cache_path=str(semantic_asset), allow_online=True)
+                    if isinstance(transform, transforms.SemanticPromptFeatures)
+                    else transform
+                    for transform in data_config.model_transforms.inputs
+                ],
+            ),
+        )
     if norm_stats is None:
         # We are loading the norm stats from the checkpoint instead of the config assets dir to make sure
         # that the policy is using the same normalization stats as the original training process.
