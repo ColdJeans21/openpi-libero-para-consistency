@@ -95,3 +95,18 @@ Inferential results remain single-seed exploratory results.
   Execution order: FM 30k -> its Goal/Para/Plus evaluations -> Teacher 30k ->
   its Goal/Para/Plus evaluations. Full checkpoints are separately labeled and
   never overwrite prior experiments.
+
+## Formal queue launch
+
+- Started: 2026-11-12 21:02:38 +08:00; detached runner PID 548193.
+- Launch code commit: `37842be` (implementation commit: `a65617a`).
+- First run: `semantic_interface_r16_fm_30k`, W&B run ID `s9n8p28g`:
+  <https://wandb.ai/xzzsryouxiwang-shenzhen-university/openpi/runs/s9n8p28g>.
+- Second run: `semantic_interface_r16_teacher_lam1_30k`, queued automatically;
+  its own W&B run is created when its training starts.
+- Orchestrator log: `logs/semantic_interface_v1_orchestrator.log`;
+  process ID file: `logs/semantic_interface_v1_runner.pid`.
+- Checkpoints: `/data/openpi_checkpoints/pi0_libero_goal_semantic_fm/semantic_interface_r16_fm_30k/`
+  and `/data/openpi_checkpoints/pi0_libero_goal_semantic_teacher/semantic_interface_r16_teacher_lam1_30k/`.
+- This is a launch record, not a completion report. Check logs and saved
+  checkpoint metadata for live progress or interruptions.
