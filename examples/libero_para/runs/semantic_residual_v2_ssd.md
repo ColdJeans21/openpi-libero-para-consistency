@@ -8,6 +8,12 @@ tests an architectural hypothesis; it does not presume success or novelty.
 
 ## Locked runs
 
+**Priority updated2026-11-15:** default training selection is residual only.
+Reuse completed `teacher_consistency_lam1_30k` as the matched original Teacher
+reference (Goal89/100, Para57/100, Plus198/410). The new control replication
+below was stopped after approximately446steps and is excluded from comparison.
+Its logs and W&B history are retained; it had not saved its first checkpoint.
+
 | Run | Config | Architecture |
 | --- | --- | --- |
 | teacher_prefix_control_30k | pi0_libero_goal_teacher_prefix_control | Original Pi0, no extra semantic head |
@@ -19,6 +25,12 @@ FSDP, 30k updates, identical optimizer/LR schedule, Goal428 demonstrations,
 60 train-only paraphrases, norm statistics/delta transforms, horizon10 and
 EMA disabled. The primary objective in BOTH runs is
 `FM(v_c,u) + MSE(stop_gradient(v_c), v_p)`, lambda1.
+
+These matched settings also apply to the reused historical Teacher reference.
+The control config remains available for an explicitly requested replication;
+it is no longer scheduled by default. `RUN_SELECTION=both` or `control` enables
+those alternatives; `bash scripts/run_semantic_residual_ssd.sh plan` prints the
+selected training jobs without allocating GPUs or changing files.
 
 Train complete SigLIP, Gemma-2B LoRA, Expert LoRA and interface projections.
 Control trainable count468,039,440; residual count468,580,640. Transformer
@@ -57,7 +69,7 @@ retained. Model assets are not committed. Remote: cold_jeans/main.
 
 ## Evaluation
 
-After each30k training: Goal/Para at10k,20k,29999, seed7,100episodes each;
+After the residual30k training: Goal/Para at10k,20k,29999, seed7,100episodes each;
 official Plus Language at29999,410cases. Evaluations run AFTER training and
 backfill checkpoint-axis metrics to the training W&B run.
 
@@ -111,8 +123,9 @@ and the corresponding SSD smoke run directories.
 - Launch source commit: `169a12d`; implementation: `a825c10`.
 - Control W&B run: `gbs7mcot`,
   <https://wandb.ai/xzzsryouxiwang-shenzhen-university/openpi/runs/gbs7mcot>.
-- The residual training receives its own W&B ID when it starts after control
-  training/evaluation. Both remain30k runs from the same official base.
+- This original queue was stopped on2026-11-15 at approximately15:18 before
+  the residual training began. The duplicate control's ID above is historical,
+  not the current active training run. Original logs remain intact.
 - Orchestrator: `logs/semantic_residual_v2_orchestrator.log`;
   PID file: `logs/semantic_residual_v2_runner.pid`.
 - SSD control: `/data/openpi_checkpoints/pi0_libero_goal_teacher_prefix_control/teacher_prefix_control_30k/`.

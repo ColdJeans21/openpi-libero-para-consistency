@@ -277,8 +277,10 @@ state and share image augmentation, flow noise/time and target.
 bash scripts/run_semantic_residual_ssd.sh all
 ```
 
-This compares a fresh original-prefix Teacher lambda1 control against a
-matched30k residual Teacher run. Both start from pi0_base, seed42, batch4,
+This compares the completed original Teacher lambda1 reference against a
+matched30k residual Teacher run. Default selection trains only the residual;
+the unnecessary fresh control replication was stopped and retained in logs.
+Both use pi0_base, seed42, batch4,
 complete SigLIP + VLM/Expert LoRA. Each training is followed by Goal/Para
 checkpoint evaluation and final Plus Language. The residual's final checkpoint
 is also evaluated with its residual disabled; those diagnostic results use

@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT="${ROOT:-/home/gml/xz/openpi}"
 PHASE="${1:-all}"
+RUN_SELECTION="${RUN_SELECTION:-residual}"
 SSD_CHECKPOINT_BASE="${SSD_CHECKPOINT_BASE:-/data/openpi_checkpoints}"
 LOG_ROOT="${ROOT}/logs/semantic_residual_v2"
 MANIFEST="${ROOT}/examples/libero_para/runs/semantic_residual_v2_ssd.md"
@@ -12,6 +13,12 @@ SPECS=(
   "pi0_libero_goal_teacher_prefix_control|teacher_prefix_control_30k"
   "pi0_libero_goal_teacher_semantic_residual|teacher_prefix_residual_r16_30k"
 )
+case "${RUN_SELECTION}" in
+  residual) TRAIN_SPECS=("${SPECS[1]}") ;;
+  control) TRAIN_SPECS=("${SPECS[0]}") ;;
+  both) TRAIN_SPECS=("${SPECS[@]}") ;;
+  *) echo "Unsupported RUN_SELECTION: ${RUN_SELECTION}" >&2; exit 1 ;;
+esac
 export OPENPI_TEXT_MODEL_DIR="${OPENPI_TEXT_MODEL_DIR:-/data/openpi_models/t5-large}"
 export PYTHONUNBUFFERED=1
 
@@ -52,8 +59,8 @@ record() {
   cp "${LOG_ROOT}/launch_commit.txt" "${target}/CODE_COMMIT.txt"
   cp "${LOG_ROOT}/launch_worktree.patch" "${target}/WORKTREE.patch"
   sha256sum assets/semantic_interface/t5_large_train_v1.npz > "${target}/TEXT_ASSET.sha256"
-  printf 'config=%s\nrun=%s\ncheckpoint_base=%s\nphase=%s\n' \
-    "${cfg}" "${run}" "${SSD_CHECKPOINT_BASE}" "${PHASE}" > "${target}/RUN_LABEL.txt"
+  printf 'config=%s\nrun=%s\ncheckpoint_base=%s\nphase=%s\nselection=%s\nreference_baseline=teacher_consistency_lam1_30k\n' \
+    "${cfg}" "${run}" "${SSD_CHECKPOINT_BASE}" "${PHASE}" "${RUN_SELECTION}" > "${target}/RUN_LABEL.txt"
 }
 
 smoke() {
@@ -137,15 +144,35 @@ full() {
 }
 
 cd "${ROOT}"
+[[ "${PHASE}" == smoke || "${PHASE}" == full || "${PHASE}" == all || "${PHASE}" == plan ]]
+if [[ "${PHASE}" == plan ]]; then
+  for spec in "${TRAIN_SPECS[@]}"; do log "selected training: ${spec}"; done
+  exit 0
+fi
 mkdir -p "${LOG_ROOT}"
 exec 9>"${LOG_ROOT}/runner.lock"
 flock -n 9 || { log 'Residual experiment runner already active'; exit 1; }
-[[ "${PHASE}" == smoke || "${PHASE}" == full || "${PHASE}" == all ]]
 [[ "$(findmnt -n -o TARGET --target "${SSD_CHECKPOINT_BASE}")" == /data ]]
 available_kib=$(df --output=avail "${SSD_CHECKPOINT_BASE}" | tail -n 1 | tr -d ' ')
 (( available_kib >= 150 * 1024 * 1024 ))
 test -f assets/semantic_interface/t5_large_train_v1.npz
 test -f "${OPENPI_TEXT_MODEL_DIR}/model.safetensors"
+if [[ "${RUN_SELECTION}" == residual ]]; then
+  # Reuse the complete prior Teacher baseline instead of retraining it. Fail
+  # early if the reference evaluations have been removed or are incomplete.
+  uv run python - <<'PY'
+import json
+from pathlib import Path
+base = Path('reports/validation/teacher_consistency_lam1_30k/step_29999')
+goal = json.loads((base / 'libero_goal_seed7.json').read_text())
+para = json.loads((base / 'libero_para_seed7/summary.json').read_text())
+plus = json.loads(Path('reports/libero_plus_language/teacher_consistency_lam1_30k/seed7/summary.json').read_text())
+assert goal['total_episodes'] == para['total_episodes'] == 100
+assert goal['total_successes'] == 89 and para['total_successes'] == 57
+assert plus['complete'] and plus['total_episodes'] == 410 and plus['total_successes'] == 198
+print('Reusing complete Teacher lambda1 baseline: Goal89/100, Para57/100, Plus198/410')
+PY
+fi
 git rev-parse HEAD > "${LOG_ROOT}/launch_commit.txt"
 git diff -- src/openpi/models src/openpi/training/config.py src/openpi/transforms.py \
   src/openpi/shared/semantic_text_test.py scripts/log_validation_to_wandb.py \
@@ -155,6 +182,6 @@ if [[ "${PHASE}" != full ]]; then
   for spec in "${SPECS[@]}"; do IFS='|' read -r cfg run <<< "${spec}"; smoke "${cfg}" "${run}"; done
 fi
 if [[ "${PHASE}" != smoke ]]; then
-  for spec in "${SPECS[@]}"; do IFS='|' read -r cfg run <<< "${spec}"; full "${cfg}" "${run}"; done
+  for spec in "${TRAIN_SPECS[@]}"; do IFS='|' read -r cfg run <<< "${spec}"; full "${cfg}" "${run}"; done
 fi
 log "semantic-residual phase ${PHASE} complete"
