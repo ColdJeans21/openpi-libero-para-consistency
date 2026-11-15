@@ -104,3 +104,17 @@ Frozen text cache SHA256:
 `ee952c33f52849ef9297c72a5c54b65e2068d8fe982832e3fa7f0ea54e1fdb8f`.
 Detailed inference JSON and memory traces are under `logs/semantic_residual_v2/`
 and the corresponding SSD smoke run directories.
+
+## Formal queue launch
+
+- Started2026-11-15 14:57:56 +08:00; detached runner PID1609404.
+- Launch source commit: `169a12d`; implementation: `a825c10`.
+- Control W&B run: `gbs7mcot`,
+  <https://wandb.ai/xzzsryouxiwang-shenzhen-university/openpi/runs/gbs7mcot>.
+- The residual training receives its own W&B ID when it starts after control
+  training/evaluation. Both remain30k runs from the same official base.
+- Orchestrator: `logs/semantic_residual_v2_orchestrator.log`;
+  PID file: `logs/semantic_residual_v2_runner.pid`.
+- SSD control: `/data/openpi_checkpoints/pi0_libero_goal_teacher_prefix_control/teacher_prefix_control_30k/`.
+- SSD residual: `/data/openpi_checkpoints/pi0_libero_goal_teacher_semantic_residual/teacher_prefix_residual_r16_30k/`.
+- This is a launch record; formal task-success results are not yet available.
