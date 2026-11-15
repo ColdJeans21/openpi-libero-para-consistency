@@ -105,6 +105,8 @@ class Pi0(_model.BaseModel):
         self.consistency_loss_weight = config.consistency_loss_weight
         self.paired_loss_mode = config.paired_loss_mode
         self.semantic_rank = config.semantic_rank
+        self.semantic_preserve_prompt = config.semantic_preserve_prompt
+        self.semantic_residual_scale = config.semantic_residual_scale
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -173,7 +175,7 @@ class Pi0(_model.BaseModel):
 
         # add language (aka tokenized inputs)
         if obs.tokenized_prompt is not None or self.semantic_rank:
-            if self.semantic_rank:
+            if self.semantic_rank and not self.semantic_preserve_prompt:
                 # Fixed PaliGemma encoding of "perform the task\n" (BOS included).
                 # Ignore supplied token IDs AND lengths: task text must not leak
                 # through embeddings, padding masks, or downstream RoPE positions.
@@ -282,10 +284,12 @@ class Pi0(_model.BaseModel):
         return base, basis
 
     def _velocity_from_hidden(self, hidden, semantic_features=None):
-        if not self.semantic_rank:
+        if not self.semantic_rank or self.semantic_residual_scale == 0:
             return self.action_out_proj(hidden)
         base, basis = self._velocity_components(hidden)
-        return base + jnp.einsum("bhdr,br->bhd", basis, self._semantic_code(semantic_features))
+        return base + self.semantic_residual_scale * jnp.einsum(
+            "bhdr,br->bhd", basis, self._semantic_code(semantic_features)
+        )
 
     def _make_paired_observation(self, observation: _model.Observation) -> _model.Observation:
         if observation.tokenized_prompt_alt is None or observation.tokenized_prompt_alt_mask is None:
@@ -294,6 +298,8 @@ class Pi0(_model.BaseModel):
             )
         if observation.tokenized_prompt is None or observation.tokenized_prompt_mask is None:
             raise ValueError("paired_prompt_training requires the canonical tokenized prompt")
+        if self.semantic_rank and (observation.semantic_features is None or observation.semantic_features_alt is None):
+            raise ValueError("Paired semantic training requires both frozen text feature arrays")
 
         # The first B elements are canonical and the second B are paraphrases. Images
         # are duplicated only after preprocessing, so both language branches see the
@@ -307,6 +313,11 @@ class Pi0(_model.BaseModel):
             tokenized_prompt=jnp.concatenate([observation.tokenized_prompt, observation.tokenized_prompt_alt], axis=0),
             tokenized_prompt_mask=jnp.concatenate(
                 [observation.tokenized_prompt_mask, observation.tokenized_prompt_alt_mask], axis=0
+            ),
+            semantic_features=(
+                jnp.concatenate([observation.semantic_features, observation.semantic_features_alt], axis=0)
+                if self.semantic_rank
+                else None
             ),
         )
 
@@ -325,14 +336,36 @@ class Pi0(_model.BaseModel):
         u_t = noise - actions
 
         if self.semantic_rank:
+            if self.semantic_preserve_prompt and self.paired_prompt_training:
+                paired = self._make_paired_observation(observation)
+                hidden = self._predict_action_hidden(paired, jnp.concatenate([x_t, x_t]), jnp.concatenate([time, time]))
+                base, basis = self._velocity_components(hidden)
+                code = self._semantic_code(paired.semantic_features)
+                residual = self.semantic_residual_scale * jnp.einsum("bhdr,br->bhd", basis, code)
+                velocity, velocity_alt = jnp.split(base + residual, 2, axis=0)
+                loss, metrics = paired_flow_matching_losses(
+                    velocity, velocity_alt, u_t, self.consistency_loss_weight, self.paired_loss_mode
+                )
+                code, code_alt = jnp.split(code, 2, axis=0)
+                base, base_alt = jnp.split(base, 2, axis=0)
+                metrics.update(
+                    {
+                        "semantic/code_distance": jnp.mean(jnp.square(code - code_alt)),
+                        "semantic/base_consistency": jnp.mean(jnp.square(base - base_alt)),
+                        "semantic/base_rms": jnp.sqrt(jnp.mean(jnp.square(base))),
+                        "semantic/residual_rms": jnp.sqrt(jnp.mean(jnp.square(residual))),
+                        "semantic/basis_rms": jnp.sqrt(jnp.mean(jnp.square(basis))),
+                    }
+                )
+                return loss, metrics
             hidden = self._predict_action_hidden(observation, x_t, time)
             base, basis = self._velocity_components(hidden)
             code = self._semantic_code(observation.semantic_features)
-            residual = jnp.einsum("bhdr,br->bhd", basis, code)
+            residual = self.semantic_residual_scale * jnp.einsum("bhdr,br->bhd", basis, code)
             velocity = base + residual
             if self.paired_prompt_training:
                 code_alt = self._semantic_code(observation.semantic_features_alt)
-                velocity_alt = base + jnp.einsum("bhdr,br->bhd", basis, code_alt)
+                velocity_alt = base + self.semantic_residual_scale * jnp.einsum("bhdr,br->bhd", basis, code_alt)
                 loss, metrics = paired_flow_matching_losses(
                     velocity, velocity_alt, u_t, self.consistency_loss_weight, self.paired_loss_mode
                 )

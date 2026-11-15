@@ -19,6 +19,7 @@ PORT="${PORT:-8000}"
 SEED="${SEED:-7}"
 GOAL_TRIALS="${GOAL_TRIALS:-10}"
 WANDB_ENTITY="${WANDB_ENTITY:-xzzsryouxiwang-shenzhen-university}"
+LOG_VALIDATION_TO_WANDB="${LOG_VALIDATION_TO_WANDB:-1}"
 LOG_ROOT="${LOG_ROOT:-${ROOT}/logs/validation/${RUN_NAME}}"
 
 read -r -a STEPS <<< "${STEPS_STRING}"
@@ -157,6 +158,10 @@ log_to_wandb() {
   local step="$1"
   local step_dir="$2"
   local marker="${step_dir}/wandb_logged.txt"
+  if [[ "${LOG_VALIDATION_TO_WANDB}" != 1 ]]; then
+    echo "[$(timestamp)] step ${step}: automatic W&B upload disabled for diagnostic evaluation"
+    return
+  fi
   if [[ -f "${marker}" ]]; then
     echo "[$(timestamp)] step ${step}: W&B marker exists; skipping backfill"
     return

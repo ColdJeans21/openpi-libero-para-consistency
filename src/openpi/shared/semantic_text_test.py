@@ -30,3 +30,16 @@ def test_inference_can_encode_unseen_text_without_altering_training_cache(tmp_pa
     transform = transforms.SemanticPromptFeatures(str(path), feature_dim=8, allow_online=True)
     np.testing.assert_array_equal(transform({"prompt": "unseen"})["semantic_features"], np.ones(8))
     assert before == path.read_bytes()
+
+
+def test_residual_features_preserve_real_prompt_for_paligemma(tmp_path):
+    path = tmp_path / "text.npz"
+    np.savez(
+        path, texts=np.array(["push left", "move left"]), features=np.arange(16).reshape(2, 8), metadata=json.dumps({})
+    )
+    transform = transforms.SemanticPromptFeatures(str(path), feature_dim=8, preserve_prompt=True)
+    result = transform({"prompt": "push left", "prompt_alt": "move left"})
+    assert result["prompt"] == "push left"
+    assert result["prompt_alt"] == "move left"
+    np.testing.assert_array_equal(result["semantic_features"], np.arange(8))
+    np.testing.assert_array_equal(result["semantic_features_alt"], np.arange(8, 16))

@@ -264,3 +264,26 @@ checkpoints stay on `/data`. Goal/Para checkpoint evaluations and final Plus
 Language evaluation follow each training run and are logged to W&B.
 See [the locked experiment manifest](runs/semantic_interface_v1_ssd.md) for
 parameter counts, asset provenance, evaluation limits, and run names.
+
+## Preserved-prefix semantic residual experiment
+
+The v2 residual retains the actual instruction in PaliGemma and predicts
+`velocity = original_velocity + U(language_conditioned_hidden) z(text)`.
+The new matrix head starts at zero, so initialization reproduces the original
+policy. Canonical/paraphrase branches each keep their own multimodal hidden
+state and share image augmentation, flow noise/time and target.
+
+```bash
+bash scripts/run_semantic_residual_ssd.sh all
+```
+
+This compares a fresh original-prefix Teacher lambda1 control against a
+matched30k residual Teacher run. Both start from pi0_base, seed42, batch4,
+complete SigLIP + VLM/Expert LoRA. Each training is followed by Goal/Para
+checkpoint evaluation and final Plus Language. The residual's final checkpoint
+is also evaluated with its residual disabled; those diagnostic results use
+separate report paths and `validation_residual_off/*` W&B keys.
+
+The previous v1 neutral-prefix configs remain available with their original
+behavior. See [the v2 manifest](runs/semantic_residual_v2_ssd.md) for locked
+controls, smoke gates, checkpoint labels and claim boundaries.

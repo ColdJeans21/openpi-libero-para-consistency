@@ -145,7 +145,9 @@ class ModelTransformFactory(GroupFactory):
                         *(
                             [
                                 _transforms.SemanticPromptFeatures(
-                                    model_config.semantic_cache_path, model_config.semantic_feature_dim
+                                    model_config.semantic_cache_path,
+                                    model_config.semantic_feature_dim,
+                                    preserve_prompt=model_config.semantic_preserve_prompt,
                                 )
                             ]
                             if isinstance(model_config, pi0_config.Pi0Config) and model_config.semantic_rank
@@ -633,9 +635,38 @@ def _semantic_interface_config(name: str, weight: float) -> TrainConfig:
     )
 
 
+def _semantic_residual_config(name: str, *, enabled: bool, scale: float = 1.0) -> TrainConfig:
+    original = _semantic_interface_config(name, 1.0)
+    model = dataclasses.replace(
+        original.model,
+        semantic_rank=16 if enabled else 0,
+        semantic_preserve_prompt=enabled,
+        semantic_residual_scale=scale,
+    )
+    return dataclasses.replace(
+        original,
+        model=model,
+        data=dataclasses.replace(
+            original.data,
+            base_config=dataclasses.replace(
+                original.data.base_config, semantic_cache_path=model.semantic_cache_path if enabled else None
+            ),
+        ),
+        policy_metadata={
+            "architecture": "semantic_residual_v2" if enabled else "original_prefix_control_v2",
+            "semantic_rank": model.semantic_rank,
+            "semantic_residual_scale": scale if enabled else 0.0,
+            "consistency_weight": 1.0,
+        },
+    )
+
+
 _CONFIGS = [
     _semantic_interface_config("pi0_libero_goal_semantic_fm", 0.0),
     _semantic_interface_config("pi0_libero_goal_semantic_teacher", 1.0),
+    _semantic_residual_config("pi0_libero_goal_teacher_prefix_control", enabled=False),
+    _semantic_residual_config("pi0_libero_goal_teacher_semantic_residual", enabled=True),
+    _semantic_residual_config("pi0_libero_goal_teacher_semantic_residual_off", enabled=True, scale=0.0),
     #
     # Inference Aloha configs.
     #

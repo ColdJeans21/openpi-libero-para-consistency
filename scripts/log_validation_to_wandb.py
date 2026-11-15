@@ -78,6 +78,13 @@ def load_plus_metrics(path: Path) -> dict[str, float]:
     return metrics
 
 
+def namespace_metrics(metrics: dict[str, float], namespace: str) -> dict[str, float]:
+    """Keep residual-off diagnostics separate from the primary on-policy results."""
+    if namespace not in {"validation", "validation_residual_off"}:
+        raise ValueError(f"Unsupported validation namespace: {namespace}")
+    return {f"{namespace}/{key.removeprefix('validation/')}": value for key, value in metrics.items()}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint-dir", type=Path, required=True)
@@ -87,6 +94,7 @@ def main() -> None:
     parser.add_argument("--libero-plus-summary", type=Path)
     parser.add_argument("--project", default="openpi")
     parser.add_argument("--entity", default=None)
+    parser.add_argument("--metric-namespace", choices=("validation", "validation_residual_off"), default="validation")
     args = parser.parse_args()
 
     run_id_path = args.checkpoint_dir / "wandb_id.txt"
@@ -103,6 +111,9 @@ def main() -> None:
     )
     if args.libero_plus_summary is not None:
         metrics.update(load_plus_metrics(args.libero_plus_summary))
+    metrics = namespace_metrics(metrics, args.metric_namespace)
+    namespace = args.metric_namespace
+    summary_prefix = "" if namespace == "validation" else "residual_off_"
 
     run = wandb.init(
         id=run_id_path.read_text(encoding="utf-8").strip(),
@@ -110,16 +121,16 @@ def main() -> None:
         project=args.project,
         entity=args.entity,
     )
-    run.define_metric("validation/checkpoint_step")
-    run.define_metric("validation/*", step_metric="validation/checkpoint_step")
+    run.define_metric(f"{namespace}/checkpoint_step")
+    run.define_metric(f"{namespace}/*", step_metric=f"{namespace}/checkpoint_step")
     run.log(metrics)
-    run.summary["latest_validation_checkpoint_step"] = args.checkpoint_step
-    run.summary["latest_libero_goal_success_rate"] = metrics["validation/libero_goal_success_rate"]
-    run.summary["latest_libero_para_success_rate"] = metrics["validation/libero_para_success_rate"]
-    run.summary["latest_paraphrase_gap"] = metrics["validation/paraphrase_gap"]
+    run.summary[f"{summary_prefix}latest_validation_checkpoint_step"] = args.checkpoint_step
+    run.summary[f"{summary_prefix}latest_libero_goal_success_rate"] = metrics[f"{namespace}/libero_goal_success_rate"]
+    run.summary[f"{summary_prefix}latest_libero_para_success_rate"] = metrics[f"{namespace}/libero_para_success_rate"]
+    run.summary[f"{summary_prefix}latest_paraphrase_gap"] = metrics[f"{namespace}/paraphrase_gap"]
     if args.libero_plus_summary is not None:
-        run.summary["latest_libero_plus_language_success_rate"] = metrics[
-            "validation/libero_plus_language_success_rate"
+        run.summary[f"{summary_prefix}latest_libero_plus_language_success_rate"] = metrics[
+            f"{namespace}/libero_plus_language_success_rate"
         ]
     run.finish()
 

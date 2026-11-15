@@ -1,4 +1,5 @@
 import dataclasses
+import math
 from typing import TYPE_CHECKING
 
 import flax.nnx as nnx
@@ -46,6 +47,10 @@ class Pi0Config(_model.BaseModelConfig):
     semantic_rank: int = 0
     semantic_feature_dim: int = 1024
     semantic_cache_path: str = "assets/semantic_interface/t5_large_train_v1.npz"
+    # Residual mode retains the original task tokens and computes separate
+    # language-conditioned action hidden states for the two prompt branches.
+    semantic_preserve_prompt: bool = False
+    semantic_residual_scale: float = 1.0
 
     pytorch_compile_mode: str | None = "max-autotune"
 
@@ -70,6 +75,10 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("Semantic rank must be non-negative and feature dimension positive")
         if self.semantic_rank and self.pi05:
             raise ValueError("The initial semantic-interface experiment supports continuous-state Pi0 only")
+        if self.semantic_preserve_prompt and not self.semantic_rank:
+            raise ValueError("semantic_preserve_prompt requires a semantic head")
+        if not math.isfinite(self.semantic_residual_scale) or self.semantic_residual_scale < 0:
+            raise ValueError("semantic_residual_scale must be finite and non-negative")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",

@@ -250,6 +250,7 @@ class SemanticPromptFeatures(DataTransformFn):
     cache_path: str
     feature_dim: int = 1024
     allow_online: bool = False
+    preserve_prompt: bool = False
 
     def _encode(self, prompt: str) -> np.ndarray:
         return semantic_text.prompt_feature(self.cache_path, prompt, self.feature_dim, allow_online=self.allow_online)
@@ -260,7 +261,8 @@ class SemanticPromptFeatures(DataTransformFn):
             if prompt_key in result:
                 prompt = result[prompt_key]
                 result[feature_key] = self._encode(prompt if isinstance(prompt, str) else prompt.item()).copy()
-                result[prompt_key] = "perform the task"
+                if not self.preserve_prompt:
+                    result[prompt_key] = "perform the task"
         return result
 
 
