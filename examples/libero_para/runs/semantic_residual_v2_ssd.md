@@ -131,3 +131,17 @@ and the corresponding SSD smoke run directories.
 - SSD control: `/data/openpi_checkpoints/pi0_libero_goal_teacher_prefix_control/teacher_prefix_control_30k/`.
 - SSD residual: `/data/openpi_checkpoints/pi0_libero_goal_teacher_semantic_residual/teacher_prefix_residual_r16_30k/`.
 - This is a launch record; formal task-success results are not yet available.
+
+## Active residual-only queue (priority update)
+
+- Started2026-11-15 15:19:17 +08:00, runner PID1636368, launch commit `fa42e4e`.
+- Active run: `teacher_prefix_residual_r16_30k`; W&B ID `6l9tvkm8`:
+  <https://wandb.ai/xzzsryouxiwang-shenzhen-university/openpi/runs/6l9tvkm8>.
+- Command: `RUN_SELECTION=residual bash scripts/run_semantic_residual_ssd.sh full`.
+- Current log: `logs/semantic_residual_v2_residual_only_orchestrator.log`;
+  PID: `logs/semantic_residual_v2_residual_only_runner.pid`.
+- Reused reference is the COMPLETED old Teacher run, not the stopped446step
+  replication. The latter's W&B ID `gbs7mcot` is tagged as stopped duplicate
+  and excluded from scientific comparisons. No run files were deleted.
+- Remaining queue: residual30k -> Goal/Para checkpoints -> final Plus -> same
+  final weights with residual disabled for Goal/Para/Plus diagnostics.
