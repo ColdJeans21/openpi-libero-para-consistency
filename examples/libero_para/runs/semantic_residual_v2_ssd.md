@@ -81,3 +81,26 @@ original-parameter/initial-loss/Euler equivalence at zero residual, real-token
 conditioning, shared augmented images and flow coordinates in a2B forward,
 semantic-head gradients, inference switch behavior and W&B namespace isolation.
 Ruff lint/format and shell syntax checks also passed.
+
+## Real-data smoke completion (2026-11-15 14:57:01 +08:00)
+
+Both real-data20step runs and saved-policy reloads passed under code `a825c10`.
+
+| Smoke run | Peak MiB/GPU | Initial total loss | Step19 total loss |
+| --- | ---: | ---: | ---: |
+| teacher_prefix_control_smoke20 | 22296 | 0.2684 | 0.1344 |
+| teacher_prefix_residual_r16_smoke20 | 22296 | 0.2684 | 0.1340 |
+
+Initial canonical FM0.2611 and paraphrase FM0.2522 also match between runs.
+The residual starts at RMS0 and reaches approximately0.0021 by step19.
+Both saved policies return finite10x7 actions, reproduce exactly under fixed
+noise, and respond to a different instruction. The residual policy accepts an
+uncached instruction through frozen CPU T5 encoding without modifying its
+checkpoint feature cache. Disabling its trained residual changes actions by
+max0.00569952 on the synthetic-input probe. This is a wiring check, not a task
+success result or proof of correct counterfactual target switching.
+
+Frozen text cache SHA256:
+`ee952c33f52849ef9297c72a5c54b65e2068d8fe982832e3fa7f0ea54e1fdb8f`.
+Detailed inference JSON and memory traces are under `logs/semantic_residual_v2/`
+and the corresponding SSD smoke run directories.
