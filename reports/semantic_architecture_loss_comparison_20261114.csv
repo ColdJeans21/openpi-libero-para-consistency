@@ -1,0 +1,14 @@
+run,architecture,objective,lambda,siglip,gemma_2b,action_expert,goal_successes,goal_episodes,para_successes,para_episodes,plus_successes,plus_episodes
+canonical_30k,original,canonical_fm,0,full,lora,lora,84,100,21,100,70,410
+para_aug_lam0_30k,original,paired_fm,0,full,lora,lora,89,100,50,100,173,410
+consistency_lam01_30k,original,symmetric,0.1,full,lora,lora,84,100,43,100,,
+consistency_lam1_30k,original,symmetric,1,full,lora,lora,90,100,52,100,191,410
+consistency_lam10_30k,original,symmetric,10,full,lora,lora,79,100,41,100,,
+teacher_consistency_lam01_30k,original,teacher,0.1,full,lora,lora,90,100,39,100,158,410
+teacher_consistency_lam1_30k,original,teacher,1,full,lora,lora,89,100,57,100,198,410
+teacher_consistency_lam10_30k,original,teacher,10,full,lora,lora,88,100,52,100,234,410
+teacher_consistency_lam1_expert_full_30k,original,teacher,1,frozen,frozen,full,78,100,43,100,169,410
+teacher_consistency_lam1_vlm_lora_expert_full_30k,original,teacher,1,frozen,lora,full,74,100,44,100,169,410
+teacher_consistency_lam1_strict_lora_30k,original,teacher,1,frozen,lora,lora,71,100,39,100,138,410
+semantic_interface_r16_fm_30k,semantic_r16,canonical_fm,0,full,lora,lora,78,100,16,100,29,410
+semantic_interface_r16_teacher_lam1_30k,semantic_r16,teacher,1,full,lora,lora,73,100,19,100,113,410

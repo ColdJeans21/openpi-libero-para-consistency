@@ -116,12 +116,17 @@ PY
   server_log="${LOG_ROOT}/${run_name}_server.log"
   eval_log="${LOG_ROOT}/${run_name}_seed${SEED}.log"
   echo "[$(timestamp)] ${run_name}: starting policy server"
+  if [[ -n "${ATTENTION_MODEL:-}" ]]; then
+    policy_command=(uv run scripts/serve_attention_policy.py --model "${ATTENTION_MODEL}" \
+      --checkpoint "${checkpoint_dir}" --beta "${ATTENTION_BETA:?}" --port "${PORT}")
+  else
+    policy_command=(uv run scripts/serve_policy.py --port "${PORT}" policy:checkpoint \
+      --policy.config="${config_name}" --policy.dir="${checkpoint_dir}")
+  fi
   setsid env \
     CUDA_VISIBLE_DEVICES="${SERVER_GPU}" \
     XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-    uv run scripts/serve_policy.py --port "${PORT}" policy:checkpoint \
-      --policy.config="${config_name}" \
-      --policy.dir="${checkpoint_dir}" \
+    "${policy_command[@]}" \
       > "${server_log}" 2>&1 < /dev/null &
   SERVER_PID=$!
 

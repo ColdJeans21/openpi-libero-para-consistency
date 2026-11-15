@@ -1,0 +1,96 @@
+{
+  "benchmark": "LIBERO-Plus",
+  "factor": "Language Instructions",
+  "suite": "libero_goal",
+  "model_name": "semantic_interface_r16_fm_30k",
+  "seed": 7,
+  "initial_state_index": 0,
+  "num_trials_per_task": 1,
+  "total_episodes": 410,
+  "expected_episodes": 410,
+  "total_successes": 29,
+  "success_rate": 0.07073170731707316,
+  "complete": true,
+  "per_difficulty": {
+    "1": {
+      "successes": 2,
+      "total": 45,
+      "success_rate": 0.044444444444444446
+    },
+    "2": {
+      "successes": 7,
+      "total": 49,
+      "success_rate": 0.14285714285714285
+    },
+    "3": {
+      "successes": 7,
+      "total": 52,
+      "success_rate": 0.1346153846153846
+    },
+    "4": {
+      "successes": 3,
+      "total": 79,
+      "success_rate": 0.0379746835443038
+    },
+    "5": {
+      "successes": 10,
+      "total": 185,
+      "success_rate": 0.05405405405405406
+    }
+  },
+  "per_base_task": {
+    "open_the_middle_drawer_of_the_cabinet": {
+      "successes": 0,
+      "total": 46,
+      "success_rate": 0.0
+    },
+    "open_the_top_drawer_and_put_the_bowl_inside": {
+      "successes": 3,
+      "total": 50,
+      "success_rate": 0.06
+    },
+    "push_the_plate_to_the_front_of_the_stove": {
+      "successes": 5,
+      "total": 39,
+      "success_rate": 0.1282051282051282
+    },
+    "put_the_bowl_on_the_plate": {
+      "successes": 2,
+      "total": 35,
+      "success_rate": 0.05714285714285714
+    },
+    "put_the_bowl_on_the_stove": {
+      "successes": 0,
+      "total": 19,
+      "success_rate": 0.0
+    },
+    "put_the_bowl_on_top_of_the_cabinet": {
+      "successes": 3,
+      "total": 44,
+      "success_rate": 0.06818181818181818
+    },
+    "put_the_cream_cheese_in_the_bowl": {
+      "successes": 2,
+      "total": 48,
+      "success_rate": 0.041666666666666664
+    },
+    "put_the_wine_bottle_on_the_rack": {
+      "successes": 9,
+      "total": 50,
+      "success_rate": 0.18
+    },
+    "put_the_wine_bottle_on_top_of_the_cabinet": {
+      "successes": 2,
+      "total": 39,
+      "success_rate": 0.05128205128205128
+    },
+    "turn_on_the_stove": {
+      "successes": 3,
+      "total": 40,
+      "success_rate": 0.075
+    }
+  },
+  "classification_path": "/libero-plus/libero/libero/benchmark/task_classification.json",
+  "classification_sha256": "faa87cce3e3ba434da01df7c77523a391b5f2912e4774330b0aa1be5f6a999e6",
+  "protocol": "official language classification; neutral camera/robot; one rollout; init state 0"
+}

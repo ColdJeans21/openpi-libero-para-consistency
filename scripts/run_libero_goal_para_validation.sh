@@ -198,12 +198,17 @@ for step in "${STEPS[@]}"; do
 
   server_log="${LOG_ROOT}/server_step${step}.log"
   echo "[$(timestamp)] step ${step}: starting policy server"
+  if [[ -n "${ATTENTION_MODEL:-}" ]]; then
+    policy_command=(uv run scripts/serve_attention_policy.py --model "${ATTENTION_MODEL}" \
+      --checkpoint "${CHECKPOINT_ROOT}/${step}" --beta "${ATTENTION_BETA:?}" --port "${PORT}")
+  else
+    policy_command=(uv run scripts/serve_policy.py --port "${PORT}" policy:checkpoint \
+      --policy.config="${CONFIG_NAME}" --policy.dir="${CHECKPOINT_ROOT}/${step}")
+  fi
   setsid env \
     CUDA_VISIBLE_DEVICES="${SERVER_GPU}" \
     XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-    uv run scripts/serve_policy.py --port "${PORT}" policy:checkpoint \
-      --policy.config="${CONFIG_NAME}" \
-      --policy.dir="${CHECKPOINT_ROOT}/${step}" \
+    "${policy_command[@]}" \
       > "${server_log}" 2>&1 < /dev/null &
   SERVER_PID=$!
 

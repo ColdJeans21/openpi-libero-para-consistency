@@ -1,0 +1,26 @@
+{
+  "protocol": "attention_v1",
+  "priority": "FM-first, then same intervention with Teacher",
+  "dependency": {
+    "run": "teacher_prefix_residual_r16_30k",
+    "runner_lock": "logs/semantic_residual_v2/runner.lock",
+    "required_evaluations": "Goal/Para at10000,20000,29999; finalPlus; samefinal residualOFF Goal/Para/Plus"
+  },
+  "weights_reused": {
+    "fm": "checkpoints/pi0_libero_goal_lora_canonical/canonical_30k/29999",
+    "teacher": "checkpoints/pi0_libero_goal_lora_consistency/teacher_consistency_lam1_30k/29999"
+  },
+  "new_training": false,
+  "new_checkpoints": false,
+  "gpu_preflight": "deferred until dependency and GPU-idle checks pass",
+  "manifest": "examples/libero_attention/manifest_v1.json",
+  "manifest_sha256": "45b1cbdcafb6e1f7dfb76670f7119f4685cb4e72b4799a7b1e75c10a64f3c334",
+  "beta_grid": [0.0, 0.6931471805599453, 1.3862943611198906],
+  "beta_selection": "FM dev only; canonical>=beta0-2pp; paired-target,paraphrase,overall,smaller-beta tie-break",
+  "standard_benchmarks": "Goal100, Para100, Plus-Language410; fixed final29999",
+  "server_gpu": 1,
+  "simulator_gpu": 0,
+  "port": 8010,
+  "output": "reports/attention/v1",
+  "queue_status": "logs/attention_v1/STATUS"
+}

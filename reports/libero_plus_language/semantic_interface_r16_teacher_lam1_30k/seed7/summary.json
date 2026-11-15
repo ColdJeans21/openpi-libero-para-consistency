@@ -1,0 +1,96 @@
+{
+  "benchmark": "LIBERO-Plus",
+  "factor": "Language Instructions",
+  "suite": "libero_goal",
+  "model_name": "semantic_interface_r16_teacher_lam1_30k",
+  "seed": 7,
+  "initial_state_index": 0,
+  "num_trials_per_task": 1,
+  "total_episodes": 410,
+  "expected_episodes": 410,
+  "total_successes": 113,
+  "success_rate": 0.275609756097561,
+  "complete": true,
+  "per_difficulty": {
+    "1": {
+      "successes": 15,
+      "total": 45,
+      "success_rate": 0.3333333333333333
+    },
+    "2": {
+      "successes": 19,
+      "total": 49,
+      "success_rate": 0.3877551020408163
+    },
+    "3": {
+      "successes": 18,
+      "total": 52,
+      "success_rate": 0.34615384615384615
+    },
+    "4": {
+      "successes": 31,
+      "total": 79,
+      "success_rate": 0.3924050632911392
+    },
+    "5": {
+      "successes": 30,
+      "total": 185,
+      "success_rate": 0.16216216216216217
+    }
+  },
+  "per_base_task": {
+    "open_the_middle_drawer_of_the_cabinet": {
+      "successes": 19,
+      "total": 46,
+      "success_rate": 0.41304347826086957
+    },
+    "open_the_top_drawer_and_put_the_bowl_inside": {
+      "successes": 11,
+      "total": 50,
+      "success_rate": 0.22
+    },
+    "push_the_plate_to_the_front_of_the_stove": {
+      "successes": 2,
+      "total": 39,
+      "success_rate": 0.05128205128205128
+    },
+    "put_the_bowl_on_the_plate": {
+      "successes": 9,
+      "total": 35,
+      "success_rate": 0.2571428571428571
+    },
+    "put_the_bowl_on_the_stove": {
+      "successes": 8,
+      "total": 19,
+      "success_rate": 0.42105263157894735
+    },
+    "put_the_bowl_on_top_of_the_cabinet": {
+      "successes": 4,
+      "total": 44,
+      "success_rate": 0.09090909090909091
+    },
+    "put_the_cream_cheese_in_the_bowl": {
+      "successes": 7,
+      "total": 48,
+      "success_rate": 0.14583333333333334
+    },
+    "put_the_wine_bottle_on_the_rack": {
+      "successes": 16,
+      "total": 50,
+      "success_rate": 0.32
+    },
+    "put_the_wine_bottle_on_top_of_the_cabinet": {
+      "successes": 18,
+      "total": 39,
+      "success_rate": 0.46153846153846156
+    },
+    "turn_on_the_stove": {
+      "successes": 19,
+      "total": 40,
+      "success_rate": 0.475
+    }
+  },
+  "classification_path": "/libero-plus/libero/libero/benchmark/task_classification.json",
+  "classification_sha256": "faa87cce3e3ba434da01df7c77523a391b5f2912e4774330b0aa1be5f6a999e6",
+  "protocol": "official language classification; neutral camera/robot; one rollout; init state 0"
+}

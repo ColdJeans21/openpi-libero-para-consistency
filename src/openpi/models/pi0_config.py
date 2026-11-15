@@ -51,6 +51,9 @@ class Pi0Config(_model.BaseModelConfig):
     # language-conditioned action hidden states for the two prompt branches.
     semantic_preserve_prompt: bool = False
     semantic_residual_scale: float = 1.0
+    # Inference intervention: additive logits only for action queries to valid
+    # instruction content keys. Zero leaves all existing policies unchanged.
+    instruction_attention_bias: float = 0.0
 
     pytorch_compile_mode: str | None = "max-autotune"
 
@@ -79,6 +82,10 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("semantic_preserve_prompt requires a semantic head")
         if not math.isfinite(self.semantic_residual_scale) or self.semantic_residual_scale < 0:
             raise ValueError("semantic_residual_scale must be finite and non-negative")
+        if not math.isfinite(self.instruction_attention_bias) or self.instruction_attention_bias < 0:
+            raise ValueError("instruction_attention_bias must be finite and non-negative")
+        if self.pi05 and self.instruction_attention_bias:
+            raise ValueError("The initial instruction-attention intervention is limited to Pi0")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",

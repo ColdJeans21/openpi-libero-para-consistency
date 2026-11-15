@@ -16,6 +16,32 @@ from openpi.shared import array_typing as at
 logger = logging.getLogger("openpi")
 
 
+def make_instruction_attention_bias(
+    tokens,
+    token_mask,
+    *,
+    prefix_length: int,
+    query_length: int,
+    key_length: int,
+    action_horizon: int,
+    beta: float,
+):
+    """Bias action-to-content logits, retaining padding/format/state boundaries.
+
+    Prefix length is measured from actual embeddings, not a hard-coded camera
+    count. This works for both full-sequence training and suffix-only cached
+    inference. Original visibility masking is applied afterwards in Gemma.
+    """
+    if tokens is None or token_mask is None:
+        raise ValueError("Actual instruction tokens and masks are required")
+    if prefix_length < tokens.shape[-1] or key_length < prefix_length or query_length < action_horizon:
+        raise ValueError("Invalid instruction/action attention boundaries")
+    content = token_mask & (tokens != 0) & (tokens != 1) & (tokens != 2) & (tokens != 108)
+    key_mask = jnp.pad(content, ((0, 0), (prefix_length - tokens.shape[-1], key_length - prefix_length)))
+    query_mask = jnp.arange(query_length) >= query_length - action_horizon
+    return jnp.asarray(beta, jnp.float32) * query_mask[None, :, None] * key_mask[:, None, :]
+
+
 def paired_flow_matching_losses(
     velocity: at.Float[at.Array, "b ah ad"],
     velocity_alt: at.Float[at.Array, "b ah ad"],
@@ -107,6 +133,7 @@ class Pi0(_model.BaseModel):
         self.semantic_rank = config.semantic_rank
         self.semantic_preserve_prompt = config.semantic_preserve_prompt
         self.semantic_residual_scale = config.semantic_residual_scale
+        self.instruction_attention_bias = config.instruction_attention_bias
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -268,9 +295,30 @@ class Pi0(_model.BaseModel):
         attn_mask = make_attn_mask(input_mask, ar_mask)
         positions = jnp.cumsum(input_mask, axis=1) - 1
         (_, suffix_out), _ = self.PaliGemma.llm(
-            [prefix_tokens, suffix_tokens], mask=attn_mask, positions=positions, adarms_cond=[None, adarms_cond]
+            [prefix_tokens, suffix_tokens],
+            mask=attn_mask,
+            positions=positions,
+            adarms_cond=[None, adarms_cond],
+            attention_bias=self._instruction_bias(
+                observation, prefix_tokens.shape[1], input_mask.shape[1], input_mask.shape[1]
+            ),
         )
         return suffix_out[:, -self.action_horizon :]
+
+    def _instruction_bias(self, observation, prefix_length, query_length, key_length):
+        if self.instruction_attention_bias == 0:
+            return None
+        if self.semantic_rank and not self.semantic_preserve_prompt:
+            raise ValueError("Instruction intervention requires the actual language prefix")
+        return make_instruction_attention_bias(
+            observation.tokenized_prompt,
+            observation.tokenized_prompt_mask,
+            prefix_length=prefix_length,
+            query_length=query_length,
+            key_length=key_length,
+            action_horizon=self.action_horizon,
+            beta=self.instruction_attention_bias,
+        )
 
     def _semantic_code(self, features):
         if features is None:
@@ -451,6 +499,9 @@ class Pi0(_model.BaseModel):
                 positions=positions,
                 kv_cache=kv_cache,
                 adarms_cond=[None, adarms_cond],
+                attention_bias=self._instruction_bias(
+                    observation, prefix_tokens.shape[1], suffix_tokens.shape[1], full_attn_mask.shape[-1]
+                ),
             )
             assert prefix_out is None
             v_t = self._velocity_from_hidden(suffix_out[:, -self.action_horizon :], observation.semantic_features)

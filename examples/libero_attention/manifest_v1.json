@@ -1,0 +1,169 @@
+{
+  "schema_version": 1,
+  "seed": 7,
+  "name": "instruction_attention_counterfactual_v1",
+  "selection": "physics/goal match and stable SHA256 only; no success labels read",
+  "paraphrase_manifest_sha256": "2c59c4dbfdeb25ed6c3f75688cffca37c19b0f3e41a2fb110188c2a5674e6695",
+  "pairs": [
+    {
+      "pair_id": "bowl_plate_stove",
+      "targets": [
+        {
+          "task": "put_the_bowl_on_the_plate",
+          "canonical": "put the bowl on the plate",
+          "paraphrase": "Is the plate waiting for the bowl?",
+          "paraphrase_file": "act_pragmatical_question_directive_eval3_ver8.bddl",
+          "paraphrase_sha256": "d39beb9de513cedaba3ac67062dd5042f94bafcc12a8046e3ca3b7c030f18917",
+          "bddl_sha256": "358b7781437e412c67d6a7648c1c28796b6b1bf117a25e61316cb8dfeb940e5b",
+          "goal": [
+            [
+              "And",
+              [
+                "On",
+                "akita_black_bowl_1",
+                "plate_1"
+              ]
+            ]
+          ],
+          "physical_sha256": "ec5eb2d78b06bcfab853d1c52009c2227bcd385e005b683e209fb69257ab7b0b"
+        },
+        {
+          "task": "put_the_bowl_on_the_stove",
+          "canonical": "put the bowl on the stove",
+          "paraphrase": "rest the bowl on the stove",
+          "paraphrase_file": "act_lexical_same_polarity_contextual_eval4_ver9.bddl",
+          "paraphrase_sha256": "e5c1612c49f3667ba3dfa3d173095aa0334266216e298299b006f4a91520b0ed",
+          "bddl_sha256": "c6812d6c988be830412aa6fc4801af04d60f8c4565d2625763b6a0f2b843a87f",
+          "goal": [
+            [
+              "And",
+              [
+                "On",
+                "akita_black_bowl_1",
+                "flat_stove_1_cook_region"
+              ]
+            ]
+          ],
+          "physical_sha256": "ec5eb2d78b06bcfab853d1c52009c2227bcd385e005b683e209fb69257ab7b0b"
+        }
+      ],
+      "initial_state_source": "put_the_bowl_on_the_plate",
+      "initial_states_sha256": "ef3466ffad734754dc40eba1f6f5712e37aa46b9692c595e0da34f16d3a0c668",
+      "dev_state_indices": [
+        47,
+        19,
+        43,
+        16,
+        38,
+        35,
+        42,
+        26,
+        12,
+        8
+      ],
+      "test_state_indices": [
+        6,
+        22,
+        3,
+        41,
+        15,
+        13,
+        31,
+        32,
+        28,
+        49,
+        23,
+        2,
+        21,
+        1,
+        48,
+        7,
+        14,
+        24,
+        29,
+        4
+      ]
+    },
+    {
+      "pair_id": "bottle_rack_cabinet",
+      "targets": [
+        {
+          "task": "put_the_wine_bottle_on_the_rack",
+          "canonical": "put the wine bottle on the rack",
+          "paraphrase": "set the wine bottle on the rack",
+          "paraphrase_file": "act_lexical_same_polarity_habitual_eval7_ver2.bddl",
+          "paraphrase_sha256": "2f23581aab9ea924a36f31947cbd1f7572346edd1254316674a2e52d95addae6",
+          "bddl_sha256": "3d3ee18139056aa3780572cde17b1c50dc20ae0d299403f65e514e8471ba0e8e",
+          "goal": [
+            [
+              "And",
+              [
+                "On",
+                "wine_bottle_1",
+                "wine_rack_1_top_region"
+              ]
+            ]
+          ],
+          "physical_sha256": "ec5eb2d78b06bcfab853d1c52009c2227bcd385e005b683e209fb69257ab7b0b"
+        },
+        {
+          "task": "put_the_wine_bottle_on_top_of_the_cabinet",
+          "canonical": "put the wine bottle on top of the cabinet",
+          "paraphrase": "place the wine bottle on top of the cabinet",
+          "paraphrase_file": "act_lexical_same_polarity_contextual_eval8_ver0.bddl",
+          "paraphrase_sha256": "4d569bc740a84fb400505ff3f3eb1a6245be651b4f6ab98a77cc2890b7ecbd80",
+          "bddl_sha256": "2ef6f403a8451e216af44158c1a6c975cf8e5058ad02d78367ac0be443d096fe",
+          "goal": [
+            [
+              "And",
+              [
+                "On",
+                "wine_bottle_1",
+                "wooden_cabinet_1_top_side"
+              ]
+            ]
+          ],
+          "physical_sha256": "ec5eb2d78b06bcfab853d1c52009c2227bcd385e005b683e209fb69257ab7b0b"
+        }
+      ],
+      "initial_state_source": "put_the_wine_bottle_on_the_rack",
+      "initial_states_sha256": "fa09aa4ade871c1c6be3dd8c93eb3437ea15190fd7dc73b8c986c8d2d3cfb062",
+      "dev_state_indices": [
+        38,
+        7,
+        28,
+        10,
+        26,
+        34,
+        47,
+        32,
+        37,
+        19
+      ],
+      "test_state_indices": [
+        3,
+        6,
+        27,
+        39,
+        35,
+        43,
+        36,
+        25,
+        44,
+        0,
+        23,
+        21,
+        46,
+        16,
+        15,
+        31,
+        9,
+        5,
+        29,
+        41
+      ]
+    }
+  ],
+  "dev_episodes": 80,
+  "test_episodes": 160
+}
