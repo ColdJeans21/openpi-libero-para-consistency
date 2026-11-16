@@ -159,9 +159,13 @@ class Attention(nn.Module):
     """Attention module."""
 
     configs: Sequence[Config]
+    language_cross_attention: bool = False
+    language_cross_attention_gate: str = "fixed"
 
     @nn.compact
-    def __call__(self, xs, positions, attn_mask, kv_cache, attention_bias=None):
+    def __call__(
+        self, xs, positions, attn_mask, kv_cache, attention_bias=None, language_attention_mask=None
+    ):
         # all experts must share the same head dim, num heads, and num kv heads for self-attention to work
         assert all(config.head_dim == self.configs[0].head_dim for config in self.configs)
         assert all(config.num_heads == self.configs[0].num_heads for config in self.configs)
@@ -234,6 +238,21 @@ class Attention(nn.Module):
         encoded = jnp.einsum("BKGTS,BSKH->BTKGH", probs, v)
         encoded = einops.rearrange(encoded, "B T K G H -> B T (K G) H")
 
+        language_encoded = None
+        language_query_mask = None
+        if self.language_cross_attention:
+            if language_attention_mask is None:
+                language_attention_mask = jnp.zeros((q.shape[0], q.shape[1], k.shape[1]), dtype=jnp.bool_)
+            if language_attention_mask.shape != (q.shape[0], q.shape[1], k.shape[1]):
+                raise ValueError("Language attention mask must match batch, query and key dimensions")
+            language_logits = jnp.where(
+                language_attention_mask[:, None, None, :, :], logits, big_neg
+            )
+            language_probs = jax.nn.softmax(language_logits, axis=-1).astype(dtype)
+            language_encoded = jnp.einsum("BKGTS,BSKH->BTKGH", language_probs, v)
+            language_encoded = einops.rearrange(language_encoded, "B T K G H -> B T (K G) H")
+            language_query_mask = jnp.any(language_attention_mask, axis=-1)
+
         out = []
         start = 0
         for i, (x, config) in enumerate(zip(xs, self.configs, strict=True)):
@@ -245,7 +264,28 @@ class Attention(nn.Module):
                     init_fn=nn.initializers.lecun_normal(in_axis=(-3, -2), out_axis=-1),
                     lora_config=config.lora_configs.get("attn"),
                 )
-                out.append(out_einsum("BTNH,NHD->BTD", encoded[:, start:end]))
+                expert_out = out_einsum("BTNH,NHD->BTD", encoded[:, start:end])
+                if self.language_cross_attention and i == 1:
+                    language_out = lora.Einsum(
+                        shape=(config.num_heads, config.head_dim, config.width),
+                        name=_name("language_attn_vec_einsum", i),
+                        init_fn=nn.initializers.zeros_init(),
+                    )("BTNH,NHD->BTD", language_encoded[:, start:end])
+                    active = language_query_mask[:, start:end, None].astype(language_out.dtype)
+                    if self.language_cross_attention_gate == "dynamic":
+                        gate = 2 * jax.nn.sigmoid(
+                            nn.Dense(
+                                1,
+                                kernel_init=nn.initializers.zeros,
+                                bias_init=nn.initializers.zeros,
+                                dtype=dtype,
+                                name=_name("language_gate", i),
+                            )(x)
+                        )
+                    else:
+                        gate = jnp.ones((*x.shape[:-1], 1), dtype=dtype)
+                    expert_out = expert_out + active * gate * language_out
+                out.append(expert_out)
                 start = end
             else:
                 out.append(None)
@@ -292,13 +332,30 @@ class Block(nn.Module):
 
     dropout: float = 0.0
     dropout_bdims: tuple[int, ...] = ()
+    language_cross_attention: bool = False
+    language_cross_attention_gate: str = "fixed"
 
     @nn.compact
-    def __call__(self, xs, kv_cache, positions, attn_mask, adarms_cond, deterministic=True, attention_bias=None):  # noqa: FBT002
+    def __call__(
+        self,
+        xs,
+        kv_cache,
+        positions,
+        attn_mask,
+        adarms_cond,
+        deterministic=True,  # noqa: FBT002
+        attention_bias=None,
+        language_attention_mask=None,
+    ):
         xs = sharding.activation_sharding_constraint(xs)
         drop = nn.Dropout(self.dropout, self.dropout_bdims) if self.dropout else lambda x, _: x
 
-        attn = Attention(configs=self.configs, name="attn")
+        attn = Attention(
+            configs=self.configs,
+            language_cross_attention=self.language_cross_attention,
+            language_cross_attention_gate=self.language_cross_attention_gate,
+            name="attn",
+        )
 
         pre_attn = []
         gates = []
@@ -309,7 +366,9 @@ class Block(nn.Module):
             gates.append(gate if x is not None else None)
 
         pre_attn = sharding.activation_sharding_constraint(pre_attn)
-        post_attn, kv_cache = attn(pre_attn, positions, attn_mask, kv_cache, attention_bias)
+        post_attn, kv_cache = attn(
+            pre_attn, positions, attn_mask, kv_cache, attention_bias, language_attention_mask
+        )
         post_attn = jax.tree.map(lambda x: drop(x, deterministic), post_attn)
         post_attn = sharding.activation_sharding_constraint(post_attn)
         xs = [_gated_residual(x, y, gate) for x, y, gate in zip(xs, post_attn, gates, strict=True)]
@@ -350,6 +409,8 @@ class Module(nn.Module):
     dropout: float = 0.0
     dropout_bdims: tuple[int, ...] = ()  # Every float is dropped independently.
     adarms: bool = False
+    language_cross_attention: bool = False
+    language_cross_attention_gate: str = "fixed"
 
     def setup(self):
         # all experts must have the same depth
@@ -377,12 +438,15 @@ class Module(nn.Module):
                 nn.broadcast,
                 nn.broadcast,
                 nn.broadcast,
+                nn.broadcast,
             ),  # 0=kv_cache, 1=positions, 2=mask, 3=adarms_cond, 4=deterministic, 5=attention_bias
             length=self.configs[0].depth,
         )(
             configs=self.configs,
             dropout=self.dropout,
             dropout_bdims=self.dropout_bdims,
+            language_cross_attention=self.language_cross_attention,
+            language_cross_attention_gate=self.language_cross_attention_gate,
         )
         self.final_norms = [RMSNorm(name=_name("final_norm", i)) for i in range(len(self.configs))]
 
@@ -402,6 +466,7 @@ class Module(nn.Module):
         kv_cache: KVCache | None = None,
         deterministic: bool = True,
         attention_bias: at.Float[at.Array, "b t s"] | None = None,
+        language_attention_mask: at.Bool[at.Array, "b t s"] | None = None,
     ) -> tuple[Sequence[at.Float[at.Array, "b _t _d"] | None], KVCache]:
         embedded = jax.tree.map(lambda e: e.astype(self.embed_dtype), embedded)
         mask = jnp.asarray(mask)[:, None, :, :]
@@ -409,7 +474,14 @@ class Module(nn.Module):
             adarms_cond = [None] * len(self.configs)
 
         embedded, kv_cache = self.layers(
-            embedded, kv_cache, positions, mask, adarms_cond, deterministic, attention_bias
+            embedded,
+            kv_cache,
+            positions,
+            mask,
+            adarms_cond,
+            deterministic,
+            attention_bias,
+            language_attention_mask,
         )
 
         assert all(e.dtype == jnp.dtype(self.embed_dtype) for e in embedded if e is not None)

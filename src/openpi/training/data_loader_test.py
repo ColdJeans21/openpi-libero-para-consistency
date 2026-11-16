@@ -1,6 +1,8 @@
 import dataclasses
+import json
 
 import jax
+import numpy as np
 import torch
 
 from openpi.models import pi0_config
@@ -75,6 +77,32 @@ def test_expand_episode_data_index_for_global_ids():
     assert expanded["to"][42].item() == 12
     assert expanded["from"][99].item() == 12
     assert expanded["to"][99].item() == 20
+
+
+def test_triplet_npz_dataset_flattens_three_supervised_members(tmp_path):
+    np.savez(
+        tmp_path / "episode.npz",
+        image=np.zeros((2, 4, 4, 3), np.uint8),
+        wrist_image=np.ones((2, 4, 4, 3), np.uint8),
+        state=np.zeros((2, 8), np.float32),
+        action_anchor=np.ones((2, 3, 7), np.float32),
+        action_counterfactual=np.full((2, 3, 7), 2, np.float32),
+        canonical=np.asarray("put the bowl on the plate"),
+        paraphrase=np.asarray("place the bowl onto the plate"),
+        counterfactual=np.asarray("put the bowl on the stove"),
+    )
+    (tmp_path / "manifest.json").write_text(
+        json.dumps({"schema_version": 1, "shards": ["episode.npz"]}), encoding="utf-8"
+    )
+
+    dataset = _data_loader.TripletNpzDataset(tmp_path)
+
+    assert len(dataset) == 6
+    assert dataset[0]["prompt"] == "put the bowl on the plate"
+    assert dataset[1]["prompt"] == "place the bowl onto the plate"
+    assert dataset[2]["prompt"] == "put the bowl on the stove"
+    np.testing.assert_array_equal(dataset[0]["actions"], dataset[1]["actions"])
+    assert np.all(dataset[2]["actions"] == 2)
 
 
 def test_with_real_dataset():

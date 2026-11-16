@@ -149,6 +149,71 @@ class FakeDataset(Dataset):
         return self._num_samples
 
 
+class TripletNpzDataset(Dataset):
+    """Flattens each same-state (canonical, paraphrase, counterfactual) record.
+
+    Files are produced only from successful teacher rollouts. Each stored state
+    contributes three ordinary FM samples; therefore B/C change the language
+    architecture without introducing a pairwise loss or a 3B forward pass.
+    """
+
+    def __init__(self, root: str | pathlib.Path):
+        self.root = pathlib.Path(root)
+        manifest_path = self.root / "manifest.json"
+        if not manifest_path.is_file():
+            raise FileNotFoundError(f"Triplet manifest not found: {manifest_path}")
+        self.manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        self._cache: dict[pathlib.Path, dict[str, np.ndarray]] = {}
+        if self.manifest.get("schema_version") != 1:
+            raise ValueError("Unsupported triplet dataset schema")
+        self._rows = []
+        for relative in self.manifest.get("shards", []):
+            path = self.root / relative
+            with np.load(path, allow_pickle=False) as shard:
+                count = int(shard["state"].shape[0])
+                required = {"image", "wrist_image", "state", "action_anchor", "action_counterfactual"}
+                if required.difference(shard.files):
+                    raise ValueError(f"Malformed triplet shard: {path}")
+                if shard["action_anchor"].shape != shard["action_counterfactual"].shape:
+                    raise ValueError(f"Mismatched action labels in: {path}")
+            self._rows.extend((path, row, member) for row in range(count) for member in range(3))
+        if not self._rows:
+            raise ValueError(f"Triplet dataset is empty: {self.root}")
+
+    def _load(self, path: pathlib.Path) -> dict[str, np.ndarray]:
+        if path in self._cache:
+            return self._cache[path]
+        with np.load(path, allow_pickle=False) as shard:
+            result = {key: np.asarray(shard[key]) for key in shard.files}
+        if len(self._cache) == 8:
+            self._cache.pop(next(iter(self._cache)))
+        self._cache[path] = result
+        return result
+
+    def __getitem__(self, index: SupportsIndex) -> dict:
+        path, row, member = self._rows[index.__index__()]
+        shard = self._load(path)
+        if member == 0:
+            prompt = str(shard["canonical"].item())
+            actions = shard["action_anchor"][row]
+        elif member == 1:
+            prompt = str(shard["paraphrase"].item())
+            actions = shard["action_anchor"][row]
+        else:
+            prompt = str(shard["counterfactual"].item())
+            actions = shard["action_counterfactual"][row]
+        return {
+            "image": shard["image"][row],
+            "wrist_image": shard["wrist_image"][row],
+            "state": shard["state"][row],
+            "actions": actions,
+            "prompt": prompt,
+        }
+
+    def __len__(self) -> int:
+        return len(self._rows)
+
+
 def create_torch_dataset(
     data_config: _config.DataConfig, action_horizon: int, model_config: _model.BaseModelConfig
 ) -> Dataset:
@@ -158,6 +223,8 @@ def create_torch_dataset(
         raise ValueError("Repo ID is not set. Cannot create dataset.")
     if repo_id == "fake":
         return FakeDataset(model_config, num_samples=1024)
+    if data_config.triplet_dataset_path is not None:
+        return TripletNpzDataset(data_config.triplet_dataset_path)
 
     dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(repo_id)
     episodes = None

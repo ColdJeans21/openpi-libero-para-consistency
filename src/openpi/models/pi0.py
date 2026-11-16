@@ -16,7 +16,7 @@ from openpi.shared import array_typing as at
 logger = logging.getLogger("openpi")
 
 
-def make_instruction_attention_bias(
+def make_instruction_attention_mask(
     tokens,
     token_mask,
     *,
@@ -24,9 +24,8 @@ def make_instruction_attention_bias(
     query_length: int,
     key_length: int,
     action_horizon: int,
-    beta: float,
 ):
-    """Bias action-to-content logits, retaining padding/format/state boundaries.
+    """Select action-query to instruction-content-key pairs.
 
     Prefix length is measured from actual embeddings, not a hard-coded camera
     count. This works for both full-sequence training and suffix-only cached
@@ -39,7 +38,29 @@ def make_instruction_attention_bias(
     content = token_mask & (tokens != 0) & (tokens != 1) & (tokens != 2) & (tokens != 108)
     key_mask = jnp.pad(content, ((0, 0), (prefix_length - tokens.shape[-1], key_length - prefix_length)))
     query_mask = jnp.arange(query_length) >= query_length - action_horizon
-    return jnp.asarray(beta, jnp.float32) * query_mask[None, :, None] * key_mask[:, None, :]
+    return query_mask[None, :, None] & key_mask[:, None, :]
+
+
+def make_instruction_attention_bias(
+    tokens,
+    token_mask,
+    *,
+    prefix_length: int,
+    query_length: int,
+    key_length: int,
+    action_horizon: int,
+    beta: float,
+):
+    """Bias action-to-content logits, retaining padding/format/state boundaries."""
+    mask = make_instruction_attention_mask(
+        tokens,
+        token_mask,
+        prefix_length=prefix_length,
+        query_length=query_length,
+        key_length=key_length,
+        action_horizon=action_horizon,
+    )
+    return jnp.asarray(beta, jnp.float32) * mask
 
 
 def paired_flow_matching_losses(
@@ -134,6 +155,7 @@ class Pi0(_model.BaseModel):
         self.semantic_preserve_prompt = config.semantic_preserve_prompt
         self.semantic_residual_scale = config.semantic_residual_scale
         self.instruction_attention_bias = config.instruction_attention_bias
+        self.language_cross_attention = config.language_cross_attention
         paligemma_config = _gemma.get_config(config.paligemma_variant)
         action_expert_config = _gemma.get_config(config.action_expert_variant)
         # TODO: rewrite gemma in NNX. For now, use bridge.
@@ -142,6 +164,8 @@ class Pi0(_model.BaseModel):
                 configs=[paligemma_config, action_expert_config],
                 embed_dtype=config.dtype,
                 adarms=config.pi05,
+                language_cross_attention=config.language_cross_attention,
+                language_cross_attention_gate=config.language_cross_attention_gate,
             )
         )
         llm.lazy_init(rngs=rngs, method="init", use_adarms=[False, True] if config.pi05 else [False, False])
@@ -302,6 +326,9 @@ class Pi0(_model.BaseModel):
             attention_bias=self._instruction_bias(
                 observation, prefix_tokens.shape[1], input_mask.shape[1], input_mask.shape[1]
             ),
+            language_attention_mask=self._language_attention_mask(
+                observation, prefix_tokens.shape[1], input_mask.shape[1], input_mask.shape[1]
+            ),
         )
         return suffix_out[:, -self.action_horizon :]
 
@@ -318,6 +345,20 @@ class Pi0(_model.BaseModel):
             key_length=key_length,
             action_horizon=self.action_horizon,
             beta=self.instruction_attention_bias,
+        )
+
+    def _language_attention_mask(self, observation, prefix_length, query_length, key_length):
+        if not self.language_cross_attention:
+            return None
+        if self.semantic_rank and not self.semantic_preserve_prompt:
+            raise ValueError("Language cross-attention requires the actual language prefix")
+        return make_instruction_attention_mask(
+            observation.tokenized_prompt,
+            observation.tokenized_prompt_mask,
+            prefix_length=prefix_length,
+            query_length=query_length,
+            key_length=key_length,
+            action_horizon=self.action_horizon,
         )
 
     def _semantic_code(self, features):
@@ -500,6 +541,9 @@ class Pi0(_model.BaseModel):
                 kv_cache=kv_cache,
                 adarms_cond=[None, adarms_cond],
                 attention_bias=self._instruction_bias(
+                    observation, prefix_tokens.shape[1], suffix_tokens.shape[1], full_attn_mask.shape[-1]
+                ),
+                language_attention_mask=self._language_attention_mask(
                     observation, prefix_tokens.shape[1], suffix_tokens.shape[1], full_attn_mask.shape[-1]
                 ),
             )

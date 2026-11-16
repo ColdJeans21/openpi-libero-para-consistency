@@ -54,6 +54,12 @@ class Pi0Config(_model.BaseModelConfig):
     # Inference intervention: additive logits only for action queries to valid
     # instruction content keys. Zero leaves all existing policies unchanged.
     instruction_attention_bias: float = 0.0
+    # Preserve the original joint attention and add a separately normalized
+    # action-query -> instruction-key readout in every action-expert block.
+    # ``fixed`` injects the language readout with unit gain. ``dynamic`` learns
+    # a per-action-token gate from the current action hidden state.
+    language_cross_attention: bool = False
+    language_cross_attention_gate: str = "fixed"
 
     pytorch_compile_mode: str | None = "max-autotune"
 
@@ -86,6 +92,10 @@ class Pi0Config(_model.BaseModelConfig):
             raise ValueError("instruction_attention_bias must be finite and non-negative")
         if self.pi05 and self.instruction_attention_bias:
             raise ValueError("The initial instruction-attention intervention is limited to Pi0")
+        if self.language_cross_attention_gate not in {"fixed", "dynamic"}:
+            raise ValueError("language_cross_attention_gate must be 'fixed' or 'dynamic'")
+        if self.language_cross_attention and self.pi05:
+            raise ValueError("The initial language cross-attention experiment supports continuous-state Pi0 only")
         if self.pytorch_compile_mode is not None:
             assert self.pytorch_compile_mode in [
                 "default",
@@ -179,6 +189,11 @@ class Pi0Config(_model.BaseModelConfig):
             filters.append(
                 nnx.Not(nnx_utils.PathRegex(".*lora.*")),
             )
+        if self.language_cross_attention:
+            # The new readout and optional gate live inside the scanned LLM
+            # tree, but must remain trainable while the pretrained bases stay
+            # frozen during LoRA experiments.
+            filters.append(nnx.Not(nnx_utils.PathRegex(".*language_.*")))
         if not filters:
             return nnx.Nothing
         return nnx.All(*filters)

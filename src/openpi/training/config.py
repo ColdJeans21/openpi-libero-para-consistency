@@ -112,6 +112,11 @@ class DataConfig:
     paired_prompt_path: str | None = None
     paired_prompt_seed: int = 0
 
+    # Offline same-state language/action triplets. When set, the loader reads
+    # successful pseudo-demonstrations from this directory instead of LeRobot.
+    # The original LIBERO repo_id is retained solely for normalization assets.
+    triplet_dataset_path: str | None = None
+
     # If non-empty, only episodes whose task text occurs in this list are loaded.
     task_filter: Sequence[str] = ()
 
@@ -661,12 +666,51 @@ def _semantic_residual_config(name: str, *, enabled: bool, scale: float = 1.0) -
     )
 
 
+LIBERO_CFD_PILOT_TRIPLETS = "/data/openpi_triplets/cfd_pilot_v1"
+
+
+def _triplet_language_attention_config(name: str, *, enabled: bool, gate: str = "fixed") -> TrainConfig:
+    model = pi0_config.Pi0Config(
+        action_horizon=10,
+        paligemma_variant="gemma_2b_lora",
+        action_expert_variant="gemma_300m_lora",
+        language_cross_attention=enabled,
+        language_cross_attention_gate=gate,
+    )
+    return TrainConfig(
+        name=name,
+        model=model,
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(triplet_dataset_path=LIBERO_CFD_PILOT_TRIPLETS),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi0_base/params",
+            missing_regex=".*lora.*|.*language_.*",
+        ),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=model.get_freeze_filter(),
+        ema_decay=None,
+        policy_metadata={
+            "training_data": "libero_same_state_cfd_pilot_v1",
+            "objective": "flattened_triplet_fm",
+            "language_cross_attention": enabled,
+            "language_gate": gate if enabled else "none",
+        },
+    )
 _CONFIGS = [
     _semantic_interface_config("pi0_libero_goal_semantic_fm", 0.0),
     _semantic_interface_config("pi0_libero_goal_semantic_teacher", 1.0),
     _semantic_residual_config("pi0_libero_goal_teacher_prefix_control", enabled=False),
     _semantic_residual_config("pi0_libero_goal_teacher_semantic_residual", enabled=True),
     _semantic_residual_config("pi0_libero_goal_teacher_semantic_residual_off", enabled=True, scale=0.0),
+    _triplet_language_attention_config("pi0_libero_goal_triplet_fm_control", enabled=False),
+    _triplet_language_attention_config("pi0_libero_goal_triplet_language_fixed", enabled=True, gate="fixed"),
+    _triplet_language_attention_config("pi0_libero_goal_triplet_language_dynamic", enabled=True, gate="dynamic"),
     #
     # Inference Aloha configs.
     #
