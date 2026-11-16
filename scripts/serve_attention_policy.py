@@ -54,7 +54,17 @@ def main():
         "checkpoint": args.checkpoint,
         "matched_evaluation_noise": True,
     }
-    WebsocketPolicyServer(wrapped, host="0.0.0.0", port=args.port, metadata=metadata).serve_forever()
+    # A counterfactual episode can spend a long time in MuJoCo between policy
+    # queries. Disable protocol keepalives for this local, matched-noise study
+    # so a slow environment step cannot invalidate an otherwise healthy run.
+    WebsocketPolicyServer(
+        wrapped,
+        host="0.0.0.0",
+        port=args.port,
+        metadata=metadata,
+        ping_interval=None,
+        ping_timeout=None,
+    ).serve_forever()
 
 
 if __name__ == "__main__":

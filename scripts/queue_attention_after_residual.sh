@@ -41,6 +41,10 @@ state RUNNING_FM_FIRST_ATTENTION_STUDY
 CUDA_VISIBLE_DEVICES='' .venv/bin/python scripts/summarize_language_experiments.py
 bash scripts/run_attention_study.sh
 state COMPLETED
+if [[ -f "${LOG}/AUTO_PUBLISH_DISABLED" || "${AUTO_PUBLISH_REPORTS:-0}" != 1 ]]; then
+  state COMPLETED_LOCAL_ONLY
+  exit 0
+fi
 # Only the generated study reports and small summaries may be auto-published.
 # Never stage other worktree changes or force-push.
 if [[ "$(git branch --show-current)" == libero-para-consistency ]]; then

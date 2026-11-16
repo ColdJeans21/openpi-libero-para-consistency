@@ -81,9 +81,18 @@ def test_joint_target_metric_penalizes_one_goal_and_checks_shared_scene():
 
 
 def test_changed_instruction_uses_changed_success_checker():
-    env = SimpleNamespace(env=SimpleNamespace(_eval_predicate=lambda p: p[-1] == "stove"))
-    targets = [{"goal": [["And", ["On", "bowl", name]]]} for name in ("plate", "stove")]
+    seen = []
+
+    def evaluate(predicate):
+        assert predicate[0] == "on", "LIBERO predicate registry is lowercase"
+        seen.append(predicate)
+        return predicate[-1] == "stove"
+
+    env = SimpleNamespace(env=SimpleNamespace(_eval_predicate=evaluate))
+    targets = [{"goal": [["And", ["On", "Bowl", name]]]} for name in ("Plate", "Stove")]
     assert goal_values(env, targets) == [False, True]
+    assert seen == [["on", "bowl", "plate"], ["on", "bowl", "stove"]]
+    assert targets[0]["goal"][0][1] == ["On", "Bowl", "Plate"]
     targets[1]["goal"] = [["Or", ["On", "bowl", "stove"]]]
     with pytest.raises(ValueError, match="conjunction"):
         goal_values(env, targets)

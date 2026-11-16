@@ -71,6 +71,32 @@ def read(path):
     return json.loads(path.read_text()) if path.is_file() else None
 
 
+def attention_status():
+    path = ROOT / "logs/attention_v1/STATUS"
+    return path.read_text().strip() if path.exists() else "NOT_QUEUED"
+
+
+def attention_dev_text():
+    rows = []
+    for label, beta in (("β=0", "b0"), ("β=ln2", "bln2"), ("β=ln4", "bln4")):
+        data = read(REPORTS / f"attention/v1/fm_dev_{beta}/summary.json")
+        if not data:
+            rows.append(f"| {label} | 0/80 | — | — | — | — | — | 未运行 |")
+            continue
+        complete = data.get("complete") is True and data.get("total_episodes") == data.get("expected_episodes") == 80
+
+        def value(key, summary=data):
+            return "—" if summary.get(key) is None else f"{100 * summary[key]:.2f}%"
+
+        rows.append(
+            f"| {label} | {data.get('total_episodes', 0)}/80 | {value('success_rate')} | "
+            f"{value('canonical_success_rate')} | {value('paraphrase_success_rate')} | "
+            f"{value('paired_target_success_rate')} | {value('paired_all_prompts_success_rate')} | "
+            f"{'完整' if complete else '不完整，不参与选择'} |"
+        )
+    return "\n".join(rows)
+
+
 def metric(path, expected, *, require_complete=False):
     data = read(path)
     if data is None:
@@ -104,6 +130,11 @@ def collect():
             status = "完成" if plus else "Goal/Para完成；Plus未测"
         elif run.startswith("attention_"):
             status = "排队（FM先行）"
+            current = attention_status()
+            if "RUNNING" in current:
+                status = "评测中；尚无完整结果"
+            elif "BLOCKED_OR_FAILED" in current:
+                status = "dev两条件完整；选择/测试未完成"
             if selection:
                 status = "评测中" if selection["selected_beta"] > 0 else "dev选择β=0；无非零干预收益"
         elif run.endswith("residual_off"):
@@ -205,6 +236,34 @@ def write_report():
     else:
         residual_text = "保留原通路v2尚需最终结果，不写作已有效模块。"
 
+    residual_analysis_path = REPORTS / "semantic_residual_v2_analysis_20261116.json"
+    residual_analysis = read(residual_analysis_path)
+    residual_details = ""
+    if residual_analysis:
+        residual_details = "\n\n### 残差v2：已完成开关对照后的解释\n\n"
+        residual_details += (
+            "v2同权重ON/OFF分别为86/24（Goal）、45/9（Para）、207/73（Plus成功数）。"
+            "**模型依赖残差分支，不等于新增分支优于原Teacher。** OFF去掉的是与主干联合适配过的路径，"
+            "并不是从头不带残差训练的原Teacher；真正方法级对照仍是原Teacher89/57/198。"
+            "v2低于Goal≥87%的预定门槛，Para下降12pp，当前不加入主方法。\n\n"
+            "v1→v2在Goal/Para/Plus分别+13/+26/+22.93pp，支持保留原多模态语言通路有助于修复替代接口的退化；"
+            "尚不支持该残差接口有独立净增益。\n\n"
+            "| 对照 | 集合 | 修复 | 退化 | 净成功变化 | 精确McNemar双侧p |\n"
+            "| --- | --- | ---: | ---: | ---: | ---: |\n"
+        )
+        for item in residual_analysis["paired"]:
+            label = "原Teacher→v2 ON" if item["first"] == "teacher_consistency_lam1_30k" else "v2 OFF→ON"
+            residual_details += (
+                f"| {label} | {item['benchmark']} {item['n']} | {item['fixed']} | {item['lost']} | "
+                f"{item['net_successes']:+d} | {item['exact_mcnemar_two_sided']:.5g} |\n"
+            )
+        residual_details += (
+            "\n上述是固定benchmark案例配对，标准评测未显式保证跨模型每次查询同噪声；"
+            "p值为事后描述，未校正多重比较，不能替代跨任务/训练种子证据。"
+            "Plus净增9条须结合较大的任务间收益/退化交换解释，不能直接称为稳定泛化提升。"
+            "逐任务变化、学习曲线、loss与残差RMS讨论见[本轮详细分析](semantic_residual_v2_analysis_20261116.md)。\n"
+        )
+
     links = [
         f"- **E{i:02d} `{r['run']}`**：{r['trainable_scope']}；"
         + " / ".join(source_link(r[k], label) for k, label in (("goal", "Goal"), ("para", "Para"), ("plus", "Plus")))
@@ -214,7 +273,7 @@ def write_report():
     selection_text = (
         f"已锁定β={selection['selected_beta']}；仅由FM dev选择。"
         if selection
-        else "β尚未选择；等待当前残差实验及其所有评测完成。"
+        else f"β尚未选择；本地状态：{attention_status()}。完整研究流程尚未结束，不能判断干预有效性。"
     )
     now = datetime.datetime.now(datetime.timezone(datetime.timedelta(hours=8))).isoformat(timespec="seconds")
     text = r"""# OpenPI 语言条件研究：方法、实验结果与下一步组合依据
@@ -247,8 +306,8 @@ def write_report():
 4. **Stop-gradient Teacher**：`MSE(v_c,u)+λ·MSE(sg(v_c),v_p)`。共享同一个模型，canonical分支对改写分支提供单向监督；不是独立冻结模型或EMA Teacher。`sg`只截断该项的canonical目标梯度，模型仍通过canonical FM与改写分支更新。
 5. **参数范围消融**：固定Teacher λ1，对照SigLIP全量/冻结、Gemma冻结/LoRA、Expert LoRA/全量；均包含相应动作投影等附属层。
 6. **替代通路 v1**：移除PaliGemma真实语言前缀，换中性文本；冻结T5-large的1024维mean-pool特征投影为归一化rank16意图`z(L)`，动作输出改成 `v_base+U·z(L)`；新增速度残差零初始化。该实验同时改变编码器、pooling、注入位置和原通路，不能单独归因于低秩。
-7. **保留通路 v2（当前实验）**：保留原PaliGemma真实语言前缀，增加可开关的rank16语义残差；Teacher λ1；训练后同一checkpoint分别开启/关闭残差。开关对照能检验推理是否依赖分支，不能单独区分新增训练引起的主干适配收益。重复的prefix control早期停止，不当成完成的科学对照；主参照复用历史Teacher λ1。
-8. **Attention干预 v1（排队）**：不训练新权重，原Attention logit增加 `β·1[action query]·1[instruction content key]`，只作用于动作token→有效指令内容token，全部18层/8头；不改视觉/文本prefix查询、不改state查询、不改可见性mask、不改prefix KV。排除padding/BOS/EOS/换行。它乘大softmax前的语言相对赔率`exp(β)`，不是强制最终语言Attention质量达到某个比例。该指标也不等于语言对行为的因果贡献。
+7. **保留通路 v2**：保留原PaliGemma真实语言前缀，增加可开关的rank16语义残差；Teacher λ1；训练后同一checkpoint分别开启/关闭残差。开关对照能检验推理是否依赖分支，不能单独区分新增训练引起的主干适配收益。重复的prefix control早期停止，不当成完成的科学对照；主参照复用历史Teacher λ1。
+8. **Attention干预 v1（状态见下）**：不训练新权重，原Attention logit增加 `β·1[action query]·1[instruction content key]`，只作用于动作token→有效指令内容token，全部18层/8头；不改视觉/文本prefix查询、不改state查询、不改可见性mask、不改prefix KV。排除padding/BOS/EOS/换行。它乘大softmax前的语言相对赔率`exp(β)`，不是强制最终语言Attention质量达到某个比例。该指标也不等于语言对行为的因果贡献。
 
 ## 4. 哪些有效：证据与尚未排除的解释
 
@@ -275,13 +334,23 @@ Canonical → 双指令FM增强：Goal __AUG_GOAL__、Para __AUG_PARA__、Plus _
 
 __RESIDUAL_RESULT__ Attention是否有效须结合FM独立对照、锁定β后的测试及标准评测判断；未完成的条件不作收益结论。
 
+__RESIDUAL_DETAILS__
+
 ### 固定样本配对证据（事后描述，不等于多seed结论）
 
 原增强 → Teacher λ1，在Plus410中修复47条、退化22条，净+25；精确McNemar双侧p≈0.00354。Para100修复17、退化10，p≈0.248。Teacher λ1 → λ10在Plus净+36，但这是外部集合差异，不改既定开发选择。样本聚集于10个基础任务与固定状态，未作多重比较校正，不能把这些p值解释成跨任务/跨训练重复的有效性保证。逐条核验与更多讨论见[2026-11-14报告](semantic_architecture_loss_comparison_20261114.md)。
 
-## 5. 排队的FM-first Attention实验
+## 5. FM-first Attention实验：计划与真实执行状态
 
 **__SELECTION__**
+
+真实权重冒烟已通过：β0精确恢复动作、参数保持不变、非零β输出有限且有变化（最大动作差约0.00354）。2026-11-16首次仿真在第一个episode前因BDDL原文`On`与LIBERO小写谓词注册表不匹配而退出，未产出完整episode；这不是方法负结果。已对齐LIBERO解析器的小写规则并增加回归检查，后续续跑仍使用同一个冻结manifest、同一β网格和选择规则。原错误日志保留。GPU冒烟通过不代表闭环评测已完成。
+
+| FM开发条件 | 已完成episode | 总成功率 | canonical | paraphrase | 双canonical目标均成功 | 四条指令均成功 | 完整性 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+__ATTENTION_DEV_TABLE__
+
+β=0与β=ln2均已完成80/80；β=ln2相对β=0仅表现为总成功率+1.25pp、paraphrase+2.50pp、四条指令全成功+5pp，双canonical目标成功率持平，且出现1.25%的错误目标结束率。**这些只是同一个FM开发集上的选择数据，不是锁定β后的测试证据。** β=ln4在1/80后因websocket keepalive超时中断，所以不能完成β选择，也不能把β=ln2写成最终最佳。连接配置已改为仅对本地长时反事实评测禁用keepalive；冻结manifest、模型权重和选择规则均未改变。
 
 执行顺序：等当前v2训练、10k/20k/29999 Goal/Para、最终Plus，以及同权重残差OFF的Goal/Para/Plus都完成后，取得同一个GPU队列锁；检查显卡空闲，再进行真实checkpoint冒烟及以下评测。
 
@@ -293,13 +362,13 @@ __RESIDUAL_RESULT__ Attention是否有效须结合FM独立对照、锁定β后�
 6. 测试A=FM β0、B=FM β*、C=Teacher λ1 β0、D=Teacher λ1 β*。若β*=0，记录非零干预不受支持并跳过重复条件。若β*>0，为B/D补Goal100、Para100、Plus410；A/C原标准结果复用，新的反事实A/C仍需跑。
 7. GPU冒烟先验证真实FM权重β0输出精确恢复、参数不变、非零干预输出有限且实际有变化。CPU单元测试不代替这一步。新评测独立W&B run，不覆盖已有训练指标。
 
-队列入口：`scripts/queue_attention_after_residual.sh`；执行器：`scripts/run_attention_study.sh`；冻结数据：`examples/libero_attention/manifest_v1.json`。本轮是已有FM/Teacher权重上的推理干预，不重复30k训练、不新增checkpoint；复用原权重位置并记录路径，新增报告位于`reports/attention/v1/`。
+队列入口：`scripts/queue_attention_after_residual.sh`；执行器：`scripts/run_attention_study.sh`；冻结数据：`examples/libero_attention/manifest_v1.json`。本轮是已有FM/Teacher权重上的推理干预，不重复30k训练、不新增checkpoint；复用原权重位置并记录路径，新增报告位于`reports/attention/v1/`。按用户最新要求，报告仅本地保存；`logs/attention_v1/AUTO_PUBLISH_DISABLED`与队列默认开关禁用自动提交/推送。
 
 ## 6. 后续组合应该依据什么
 
-目前优先保留原多模态语言通路、训练改写增强，以及Teacher λ1开发参照；SigLIP适配是有收益但较昂贵的候选。暂不把v1替代接口加入主方法，也不把尚无结果的v2/Attention视作有效。
+目前优先保留原多模态语言通路、训练改写增强，以及Teacher λ1开发参照；SigLIP适配是有收益但较昂贵的候选。v1和v2均不默认加入主方法：v2虽比v1恢复明显，但相对原Teacher仍有Goal/Para退化。Attention没有完整行为结果，暂不作有效性判断。
 
-待v2与Attention分别有证据，再比较“Teacher基础”“Teacher＋有效架构/Attention”“Teacher＋两者”的同预算结果，并检查收益是否重复、是否保留原任务性能与关键语义切换。先证明效果与机制，再决定组合数量；增加实验数量本身不等于论文贡献。固定Attention重加权应作为有前人基础的诊断/基线，创新需落在验证出的机制与进一步必要的设计，而非简单命名。
+接下来先完成FM独立Attention对照，再判断是否与Teacher组合；只有新增模块单独有收益，才进入同预算组合比较。残差v2暂不作为应当叠加的模块。检查收益是否重复、是否保留原任务性能与关键语义切换。先证明效果与机制，再决定组合数量；增加实验数量本身不等于论文贡献。固定Attention重加权应作为有前人基础的诊断/基线，创新需落在验证出的机制与进一步必要的设计，而非简单命名。
 
 尚未完成：合法不同语义任务的行为切换证据、负样本对比损失、独立noise/time消融、同目标下仅切换stop-gradient的消融、多训练seed、完整解冻全模型。不要将排队/讨论内容写成已完成成果。
 
@@ -330,6 +399,8 @@ __TABLE__
         "__TABLE__": "\n".join(table),
         "__SELECTION__": selection_text,
         "__RESIDUAL_RESULT__": residual_text,
+        "__RESIDUAL_DETAILS__": residual_details,
+        "__ATTENTION_DEV_TABLE__": attention_dev_text(),
     }
     for key, benchmark in (("GOAL", "goal"), ("PARA", "para"), ("PLUS", "plus")):
         replacements[f"__AUG_{key}__"] = delta("canonical_30k", "para_aug_lam0_30k", benchmark)

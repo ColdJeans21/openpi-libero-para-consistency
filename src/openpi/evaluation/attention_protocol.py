@@ -69,7 +69,11 @@ def goal_values(env, targets):
         root = target["goal"]
         if len(root) != 1 or root[0][0].lower() != "and":
             raise ValueError("This frozen protocol requires an explicit conjunction goal")
-        values.append(all(env.env._eval_predicate(predicate) for predicate in root[0][1:]))  # noqa: SLF001
+        # LIBERO's normal BDDL parser lowercases every token before dispatch.
+        # The frozen manifest preserves file spelling (e.g. "On"). Apply the
+        # same normalization here without changing the frozen goal/source hash.
+        predicates = [[str(token).lower() for token in predicate] for predicate in root[0][1:]]
+        values.append(all(env.env._eval_predicate(predicate) for predicate in predicates))  # noqa: SLF001
     return values
 
 
