@@ -702,6 +702,58 @@ def _triplet_language_attention_config(name: str, *, enabled: bool, gate: str = 
             "language_gate": gate if enabled else "none",
         },
     )
+
+
+def _paired_fm_language_attention_config(name: str) -> TrainConfig:
+    """E02-matched paired FM with only the fixed language readout enabled.
+
+    This deliberately reuses the original ten-task canonical/paraphrase pairs,
+    shared flow coordinates, and zero consistency weight from
+    ``pi0_libero_goal_lora_para_aug``.  The independently normalized,
+    zero-initialized language cross-attention branch is the only experimental
+    variable.
+    """
+    model = pi0_config.Pi0Config(
+        action_horizon=10,
+        paligemma_variant="gemma_2b_lora",
+        action_expert_variant="gemma_300m_lora",
+        paired_prompt_training=True,
+        consistency_loss_weight=0.0,
+        language_cross_attention=True,
+        language_cross_attention_gate="fixed",
+    )
+    return TrainConfig(
+        name=name,
+        model=model,
+        data=LeRobotLiberoDataConfig(
+            repo_id="physical-intelligence/libero",
+            assets=AssetsConfig(assets_dir="./assets/pi0_libero_goal_lora_canonical"),
+            base_config=DataConfig(
+                prompt_from_task=True,
+                paired_prompt_path=LIBERO_TRAIN_PARAPHRASES,
+                task_filter=LIBERO_GOAL_TASKS,
+            ),
+            extra_delta_transform=True,
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi0_base/params",
+            missing_regex=".*lora.*|.*language_.*",
+        ),
+        num_train_steps=30_000,
+        batch_size=4,
+        fsdp_devices=2,
+        freeze_filter=model.get_freeze_filter(),
+        ema_decay=None,
+        policy_metadata={
+            "training_data": "libero_goal_paired_prompts_v1",
+            "objective": "paired_fm_lambda0",
+            "language_cross_attention": True,
+            "language_gate": "fixed",
+            "matched_control": "pi0_libero_goal_lora_para_aug",
+        },
+    )
+
+
 _CONFIGS = [
     _semantic_interface_config("pi0_libero_goal_semantic_fm", 0.0),
     _semantic_interface_config("pi0_libero_goal_semantic_teacher", 1.0),
@@ -711,6 +763,7 @@ _CONFIGS = [
     _triplet_language_attention_config("pi0_libero_goal_triplet_fm_control", enabled=False),
     _triplet_language_attention_config("pi0_libero_goal_triplet_language_fixed", enabled=True, gate="fixed"),
     _triplet_language_attention_config("pi0_libero_goal_triplet_language_dynamic", enabled=True, gate="dynamic"),
+    _paired_fm_language_attention_config("pi0_libero_goal_paired_fm_language_fixed"),
     #
     # Inference Aloha configs.
     #

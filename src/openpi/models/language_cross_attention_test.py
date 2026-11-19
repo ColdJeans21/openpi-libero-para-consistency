@@ -10,6 +10,7 @@ import pytest
 from openpi.models import pi0
 from openpi.models import pi0_config
 from openpi.models.semantic_interface_test import TinyVision
+from openpi.training import config as training_config
 
 
 @pytest.fixture(params=["fixed", "dynamic"])
@@ -66,9 +67,7 @@ def test_language_branch_receives_gradient(language_models):
 
     grads = nnx.grad(objective)(branch)
     projection_grads = [
-        value.value
-        for path, value in grads.flat_state().items()
-        if "language_attn_vec_einsum" in str(path)
+        value.value for path, value in grads.flat_state().items() if "language_attn_vec_einsum" in str(path)
     ]
     assert projection_grads
     assert any(np.linalg.norm(value) > 0 for value in projection_grads)
@@ -89,3 +88,20 @@ def test_instruction_mask_selects_only_action_queries_and_content_keys():
     assert not mask[:, :7].any()
     assert mask[:, 7:, 4].all()
     assert mask.sum() == 3
+
+
+def test_paired_fm_language_config_is_e02_matched_single_variable_ablation():
+    baseline = training_config.get_config("pi0_libero_goal_lora_para_aug")
+    branch = training_config.get_config("pi0_libero_goal_paired_fm_language_fixed")
+
+    assert branch.data == baseline.data
+    assert branch.num_train_steps == baseline.num_train_steps
+    assert branch.batch_size == baseline.batch_size
+    assert branch.fsdp_devices == baseline.fsdp_devices
+    assert branch.ema_decay == baseline.ema_decay
+    assert branch.model == dataclasses.replace(
+        baseline.model,
+        language_cross_attention=True,
+        language_cross_attention_gate="fixed",
+    )
+    assert branch.policy_metadata["matched_control"] == baseline.name
