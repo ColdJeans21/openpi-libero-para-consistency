@@ -15,7 +15,11 @@ def verified_flow_losses(v, v_alt, u, u_alt, endpoint, endpoint_alt, negative, t
     teacher = jnp.where(mask, 0.0, jnp.mean(jnp.square(v_alt - jax.lax.stop_gradient(v)), axis=-1))
     # u_alt-u = a-a_alt, since BOTH labels use the same epsilon.
     target = jax.lax.stop_gradient(endpoint + u_alt - u)
-    differential = jnp.where(mask, jnp.mean(jnp.square(endpoint_alt - target), axis=-1), 0.0)
+    differential = (
+        jnp.where(mask, jnp.mean(jnp.square(endpoint_alt - target), axis=-1), 0.0)
+        if diff_weight > 0
+        else jnp.zeros_like(fm0)
+    )
     fm = 0.5 * (fm0 + fm1)
     total = fm + teacher_weight * teacher + diff_weight * differential
     return total, {
@@ -26,4 +30,5 @@ def verified_flow_losses(v, v_alt, u, u_alt, endpoint, endpoint_alt, negative, t
         "loss_differential_negative": differential,
         "loss_total": total,
         "negative_pair_fraction": jnp.mean(negative.astype(jnp.float32)),
+        "differential_evaluated": jnp.asarray(float(diff_weight > 0)),
     }
