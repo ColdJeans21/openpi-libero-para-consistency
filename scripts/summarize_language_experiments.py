@@ -166,7 +166,11 @@ def collect():
             status = "训练/评测中（未出最终结果）"
         if run.startswith("verified_") and not (goal and para and plus):
             status_path = ROOT / "logs/verified_cfd_v2/STATUS"
-            status = "新实验；" + (status_path.read_text().strip() if status_path.exists() else "待数据验证/冒烟")
+            stage = status_path.read_text().strip() if status_path.exists() else "待数据验证/冒烟"
+            if "TRAINING verified_" in stage and "smoke" not in stage and run not in stage:
+                status = "等待队列；本组尚无完整结果"
+            else:
+                status = "新实验；" + stage
         rows.append(
             {
                 "run": run,
