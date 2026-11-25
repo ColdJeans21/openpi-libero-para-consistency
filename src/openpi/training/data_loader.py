@@ -422,6 +422,12 @@ def create_torch_data_loader(
     """
     dataset = create_torch_dataset(data_config, action_horizon, model_config)
     dataset = transform_dataset(dataset, data_config, skip_norm_stats=skip_norm_stats)
+    if data_config.verified_pair_dataset_path:
+        from openpi.training.verified_pairs import MixedVerifiedPairs
+
+        dataset = MixedVerifiedPairs(
+            dataset, data_config.verified_pair_dataset_path, data_config, skip_norm_stats=skip_norm_stats
+        )
 
     # Use TorchDataLoader for both frameworks
     # For PyTorch DDP, create DistributedSampler and divide batch size by world size

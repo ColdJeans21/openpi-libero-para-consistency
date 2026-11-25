@@ -116,6 +116,7 @@ class DataConfig:
     # successful pseudo-demonstrations from this directory instead of LeRobot.
     # The original LIBERO repo_id is retained solely for normalization assets.
     triplet_dataset_path: str | None = None
+    verified_pair_dataset_path: str | None = None
 
     # If non-empty, only episodes whose task text occurs in this list are loaded.
     task_filter: Sequence[str] = ()
@@ -754,7 +755,40 @@ def _paired_fm_language_attention_config(name: str) -> TrainConfig:
     )
 
 
+def _verified_cfd_config(name: str, teacher: float, differential: float) -> TrainConfig:
+    base = _paired_fm_language_attention_config(name)
+    model = dataclasses.replace(
+        base.model,
+        language_cross_attention=False,
+        verified_pair_training=True,
+        consistency_loss_weight=teacher,
+        differential_loss_weight=differential,
+    )
+    return dataclasses.replace(
+        base,
+        model=model,
+        freeze_filter=model.get_freeze_filter(),
+        data=dataclasses.replace(
+            base.data,
+            base_config=dataclasses.replace(
+                base.data.base_config, verified_pair_dataset_path="/data/openpi_triplets/verified_initial_pairs_v2"
+            ),
+        ),
+        policy_metadata={
+            "study": "verified_cfd_v2",
+            "teacher_weight": teacher,
+            "differential_weight": differential,
+            "original_to_counterfactual_pairs": "7:1",
+            "objective": "paired_fm_plus_auxiliaries",
+            "base": "pi0_base",
+        },
+    )
+
+
 _CONFIGS = [
+    _verified_cfd_config("pi0_libero_goal_verified_r0", 0.0, 0.0),
+    _verified_cfd_config("pi0_libero_goal_verified_r1", 1.0, 0.0),
+    _verified_cfd_config("pi0_libero_goal_verified_r2", 1.0, 0.1),
     _semantic_interface_config("pi0_libero_goal_semantic_fm", 0.0),
     _semantic_interface_config("pi0_libero_goal_semantic_teacher", 1.0),
     _semantic_residual_config("pi0_libero_goal_teacher_prefix_control", enabled=False),

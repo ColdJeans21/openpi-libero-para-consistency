@@ -64,7 +64,30 @@ RUNS = [
         "复用teacher λ1；新增训练参数0",
         0,
     ),
+    ("triplet_fm_control_30k", "三元组pilot 原架构", "FM（无差分）", 0, DEFAULT, 468.04),
+    ("triplet_language_fixed_30k", "三元组pilot 固定语言头", "FM（无差分）", 0, DEFAULT + " / 独立语言头", None),
+    ("triplet_language_dynamic_30k", "三元组pilot 动态语言头", "FM（无差分）", 0, DEFAULT + " / 动态语言头", None),
+    ("paired_fm_language_fixed_30k", "Goal同义配对 固定语言头", "Paired FM", 0, DEFAULT + " / 独立语言头", None),
+    ("verified_r0_30k", "R0 完整Goal＋验证异义", "Paired FM", 0, DEFAULT, 468.04),
+    ("verified_r1_30k", "R1 同数据＋同义Teacher", "Paired FM+Teacher", 1, DEFAULT, 468.04),
+    ("verified_r2_30k", "R2 同数据＋异义差分", "Paired FM+Teacher+Diff(0.1)", 1, DEFAULT, 468.04),
 ]
+
+
+def param_cell(value):
+    return "待精确核对" if value is None else f"{value:.2f}"
+
+
+def training_data(run):
+    if run.startswith("verified_"):
+        return "Goal428演示+60训练改写；7:1混合双分支成功验证的初始状态异义对"
+    if run.startswith("triplet_"):
+        return "两任务族四目标/78条成功anchor rollout；pi05伪标签；替代原Goal演示"
+    if run in {"canonical_30k", "attention_fm_selected_v1"}:
+        return "Goal10任务428演示/仅canonical；attention复用权重"
+    if run == "semantic_interface_r16_fm_30k":
+        return "Goal428演示/配对输入但仅canonical FM"
+    return "Goal10任务428演示+60训练改写；评测开关组复用权重"
 
 
 def read(path):
@@ -141,6 +164,9 @@ def collect():
             status = "等待v2最终权重"
         else:
             status = "训练/评测中（未出最终结果）"
+        if run.startswith("verified_") and not (goal and para and plus):
+            status_path = ROOT / "logs/verified_cfd_v2/STATUS"
+            status = "新实验；" + (status_path.read_text().strip() if status_path.exists() else "待数据验证/冒烟")
         rows.append(
             {
                 "run": run,
@@ -149,6 +175,7 @@ def collect():
                 "lambda": weight,
                 "trainable_scope": scope,
                 "trainable_params_M": params,
+                "training_data": training_data(run),
                 "status": status,
                 "goal": goal,
                 "para": para,
@@ -177,7 +204,16 @@ def write_report():
     by_run = {r["run"]: r for r in rows}
     table = []
     out = io.StringIO()
-    fields = ["run", "method", "objective", "lambda", "trainable_scope", "trainable_params_M", "status"]
+    fields = [
+        "run",
+        "method",
+        "objective",
+        "lambda",
+        "trainable_scope",
+        "trainable_params_M",
+        "status",
+        "training_data",
+    ]
     for name in ("goal", "para", "plus"):
         fields.extend([f"{name}_successes", f"{name}_episodes", f"{name}_rate", f"{name}_source"])
     fields.extend(["cf_paired_target_rate", "cf_all_four_rate"])
@@ -204,7 +240,7 @@ def write_report():
         )
         table.append(
             f"| E{i:02d} | {row['method']} | {row['objective']}；λ={row['lambda']} | "
-            f"{row['trainable_params_M']:.2f} | {cell(row['goal'])} | {cell(row['para'])} | "
+            f"{param_cell(row['trainable_params_M'])} | {cell(row['goal'])} | {cell(row['para'])} | "
             f"{cell(row['plus'])} | — | {cf} | {row['status']} |"
         )
 
@@ -288,7 +324,7 @@ def write_report():
 
 ## 2. 数据、输入输出与公平比较口径
 
-- 主实验均从官方 `pi0_base` 初始化；LIBERO-Goal 10任务、428条演示；60条独立训练改写。训练seed=42、global batch=4、30k更新、双卡FSDP、EMA关闭。
+- E01–E14及后续新训练从官方 `pi0_base` 初始化；E15–E17是已有权重上的推理对照。E01–E14使用LIBERO-Goal 10任务、428条演示；增强组使用60条独立训练改写。E18–E20改用两任务族三元组pilot，不能套用428条演示口径；E21回到E02配对数据。R0–R2为新一轮混合数据实验。训练seed=42、global batch=4、30k更新、双卡FSDP、EMA关闭。
 - 输入：同一时刻的俯视图＋腕图、机器人状态、指令；训练目标为未来10步动作块。内部动作补齐32维，执行时取前7维。语言配对复用同观测、同专家动作、同噪声和flow时间。
 - 全表主实验统一最终checkpoint **29999**；不按不同评测集分别挑最优checkpoint。已有10k/20k曲线保留在原始报告中，不能与最终值混用。
 - Goal：10任务×10次，100 episodes，评测seed7。Para：固定100条语言/任务manifest，seed7。Plus：官方 **Language Instructions** 因素、410 cases、每条1次、initial state 0，seed7；不是完整LIBERO-Plus所有因素，也不是410个独立物理任务。
@@ -305,7 +341,7 @@ def write_report():
 3. **对称一致性**：双指令FM增强 `+ λ·MSE(v_c,v_p)`；双分支都受到显式一致性梯度。
 4. **Stop-gradient Teacher**：`MSE(v_c,u)+λ·MSE(sg(v_c),v_p)`。共享同一个模型，canonical分支对改写分支提供单向监督；不是独立冻结模型或EMA Teacher。`sg`只截断该项的canonical目标梯度，模型仍通过canonical FM与改写分支更新。
 5. **参数范围消融**：固定Teacher λ1，对照SigLIP全量/冻结、Gemma冻结/LoRA、Expert LoRA/全量；均包含相应动作投影等附属层。
-6. **替代通路 v1**：移除PaliGemma真实语言前缀，换中性文本；冻结T5-large的1024维mean-pool特征投影为归一化rank16意图`z(L)`，动作输出改成 `v_base+U·z(L)`；新增速度残差零初始化。该实验同时改变编码器、pooling、注入位置和原通路，不能单独归因于低秩。
+6. **替代通路 v1**（E12为canonical FM，不是Paired FM；与E13比较同时改变监督方式）：移除PaliGemma真实语言前缀，换中性文本；冻结T5-large的1024维mean-pool特征投影为归一化rank16意图`z(L)`，动作输出改成 `v_base+U·z(L)`；新增速度残差零初始化。该实验同时改变编码器、pooling、注入位置和原通路，不能单独归因于低秩。
 7. **保留通路 v2**：保留原PaliGemma真实语言前缀，增加可开关的rank16语义残差；Teacher λ1；训练后同一checkpoint分别开启/关闭残差。开关对照能检验推理是否依赖分支，不能单独区分新增训练引起的主干适配收益。重复的prefix control早期停止，不当成完成的科学对照；主参照复用历史Teacher λ1。
 8. **Attention干预 v1（状态见下）**：不训练新权重，原Attention logit增加 `β·1[action query]·1[instruction content key]`，只作用于动作token→有效指令内容token，全部18层/8头；不改视觉/文本prefix查询、不改state查询、不改可见性mask、不改prefix KV。排除padding/BOS/EOS/换行。它乘大softmax前的语言相对赔率`exp(β)`，不是强制最终语言Attention质量达到某个比例。该指标也不等于语言对行为的因果贡献。
 
@@ -381,6 +417,9 @@ __LINKS__
 - 历史DP/ACT的Spatial与Goal来自分别训练的suite策略，不是同一个跨suite模型；目标不可辨识与性能差距有关，但跨架构差异不能只归因于语言。
 - 大表反事实一列为“两个canonical目标均成功 / 四条指令均成功”的**状态级**比例，分母为40个测试状态；与160 episodes总成功率是不同指标。β0若胜出，所列为复用的baseline反事实结果，非干预收益。
 
+
+__LOCAL_VERIFIED_ANALYSIS__
+
 ## 8. 全方法评估结果大表（主实验最终29999；结果截至上述更新时间）
 
 主实验训练范围详见E编号证据索引；所有数值均为本地实测。Plus列仅语言因素。M=百万可训练参数；Attention行M=0表示**新增训练参数**为0，并非模型参数总量为0。历史行不进入主实验排序。“—”为未测或尚未完成。
@@ -395,6 +434,10 @@ __TABLE__
 """
     replacements = {
         "__NOW__": now,
+        "__LOCAL_VERIFIED_ANALYSIS__": (
+            (REPORTS / "verified_cfd_analysis_20261125.md").read_text()
+            if (REPORTS / "verified_cfd_analysis_20261125.md").exists() else ""
+        ),
         "__LINKS__": "\n".join(links),
         "__TABLE__": "\n".join(table),
         "__SELECTION__": selection_text,

@@ -41,6 +41,8 @@ class Pi0Config(_model.BaseModelConfig):
     # teacher_consistency anchors only the canonical branch with FM and trains the
     # paraphrase branch to match a stop-gradient canonical velocity prediction.
     paired_loss_mode: str = "symmetric_fm"
+    verified_pair_training: bool = False
+    differential_loss_weight: float = 0.0
 
     # Opt-in factorized velocity: visual/state flow + U(visual/state flow) z(text).
     # Text features are computed by a frozen, independently versioned encoder.
@@ -68,6 +70,12 @@ class Pi0Config(_model.BaseModelConfig):
             object.__setattr__(self, "max_token_len", 200 if self.pi05 else 48)
         if self.discrete_state_input is None:
             object.__setattr__(self, "discrete_state_input", self.pi05)
+        if not math.isfinite(self.differential_loss_weight) or self.differential_loss_weight < 0:
+            raise ValueError("Invalid differential loss weight")
+        if self.verified_pair_training and (not self.paired_prompt_training or self.semantic_rank or self.pi05):
+            raise ValueError("Verified pairs require paired original Pi0")
+        if self.differential_loss_weight and not self.verified_pair_training:
+            raise ValueError("Differential loss requires verified pairs")
         if self.consistency_loss_weight < 0:
             raise ValueError("consistency_loss_weight must be non-negative")
         if self.consistency_loss_weight > 0 and not self.paired_prompt_training:
@@ -146,6 +154,14 @@ class Pi0Config(_model.BaseModelConfig):
                     jax.ShapeDtypeStruct([batch_size, self.max_token_len], bool)
                     if self.paired_prompt_training
                     else None
+                ),
+                paired_actions=(
+                    jax.ShapeDtypeStruct([batch_size, self.action_horizon, self.action_dim], jnp.float32)
+                    if self.verified_pair_training
+                    else None
+                ),
+                pair_is_negative=(
+                    jax.ShapeDtypeStruct([batch_size], jnp.bool_) if self.verified_pair_training else None
                 ),
                 semantic_features=(
                     jax.ShapeDtypeStruct([batch_size, self.semantic_feature_dim], jnp.float32)

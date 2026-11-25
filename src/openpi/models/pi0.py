@@ -151,6 +151,8 @@ class Pi0(_model.BaseModel):
         self.paired_prompt_training = config.paired_prompt_training
         self.consistency_loss_weight = config.consistency_loss_weight
         self.paired_loss_mode = config.paired_loss_mode
+        self.verified_pair_training = config.verified_pair_training
+        self.differential_loss_weight = config.differential_loss_weight
         self.semantic_rank = config.semantic_rank
         self.semantic_preserve_prompt = config.semantic_preserve_prompt
         self.semantic_residual_scale = config.semantic_residual_scale
@@ -423,6 +425,37 @@ class Pi0(_model.BaseModel):
         time_expanded = time[..., None, None]
         x_t = time_expanded * noise + (1 - time_expanded) * actions
         u_t = noise - actions
+
+        if self.verified_pair_training:
+            from openpi.models.verified_flow import verified_flow_losses
+
+            if observation.paired_actions is None or observation.pair_is_negative is None:
+                raise ValueError("Verified pair labels are missing")
+            alt = observation.paired_actions
+            paired = self._make_paired_observation(observation)
+            x_alt = time_expanded * noise + (1 - time_expanded) * alt
+            velocity = self._predict_velocity(paired, jnp.concatenate([x_t, x_alt]), jnp.concatenate([time, time]))
+            v, v_alt = jnp.split(velocity, 2)
+            # Extra same-coordinate endpoint pass only for R2. Random-time FM is
+            # retained for both branches. The endpoint auxiliary is NOT an ODE rollout.
+            if self.differential_loss_weight:
+                endpoint = self._predict_velocity(
+                    paired, jnp.concatenate([noise, noise]), jnp.ones((2 * actions.shape[0],))
+                )
+                end, end_alt = jnp.split(endpoint, 2)
+            else:
+                end, end_alt = jnp.zeros_like(v), jnp.zeros_like(v_alt)
+            return verified_flow_losses(
+                v,
+                v_alt,
+                u_t,
+                noise - alt,
+                end,
+                end_alt,
+                observation.pair_is_negative,
+                self.consistency_loss_weight,
+                self.differential_loss_weight,
+            )
 
         if self.semantic_rank:
             if self.semantic_preserve_prompt and self.paired_prompt_training:

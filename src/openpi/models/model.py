@@ -106,6 +106,10 @@ class Observation(Generic[ArrayT]):
     tokenized_prompt_alt: at.Int[ArrayT, "*b l"] | None = None
     tokenized_prompt_alt_mask: at.Bool[ArrayT, "*b l"] | None = None
 
+    # Training-only, already normalized/padded paired action label and edge type.
+    paired_actions: at.Float[ArrayT, "*b ah ad"] | None = None
+    pair_is_negative: at.Bool[ArrayT, "*b"] | None = None
+
     # Independently encoded, frozen text features for the factorized Pi0 interface.
     semantic_features: at.Float[ArrayT, "*b e"] | None = None
     semantic_features_alt: at.Float[ArrayT, "*b e"] | None = None
@@ -139,6 +143,8 @@ class Observation(Generic[ArrayT]):
             tokenized_prompt_mask=data.get("tokenized_prompt_mask"),
             tokenized_prompt_alt=data.get("tokenized_prompt_alt"),
             tokenized_prompt_alt_mask=data.get("tokenized_prompt_alt_mask"),
+            paired_actions=data.get("paired_actions"),
+            pair_is_negative=data.get("pair_is_negative"),
             semantic_features=data.get("semantic_features"),
             semantic_features_alt=data.get("semantic_features_alt"),
             token_ar_mask=data.get("token_ar_mask"),
@@ -222,6 +228,8 @@ def preprocess_observation(
         tokenized_prompt_mask=observation.tokenized_prompt_mask,
         tokenized_prompt_alt=observation.tokenized_prompt_alt,
         tokenized_prompt_alt_mask=observation.tokenized_prompt_alt_mask,
+        paired_actions=observation.paired_actions,
+        pair_is_negative=observation.pair_is_negative,
         semantic_features=observation.semantic_features,
         semantic_features_alt=observation.semantic_features_alt,
         token_ar_mask=observation.token_ar_mask,
