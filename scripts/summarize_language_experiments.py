@@ -316,6 +316,8 @@ def write_report():
 
 更新时间：__NOW__。本文件由 `scripts/summarize_language_experiments.py` 从本地原始JSON重新生成；机器可读版本：[all_language_experiments.csv](all_language_experiments.csv)。最后一节为所有方法的大表，缺失结果保留为空。
 
+__LOCAL_VERIFIED_ANALYSIS__
+
 ## 1. 要解决的问题与当前 insight
 
 **同一场景下，控制应对等价语言稳定，对改变目标的关键语义保持敏感。** 当前已得到的证据主要支持“语言增强＋canonical分支的单向Teacher监督改善改写泛化”；尚未验证“同场景换一个关键语义词，行为就正确切换目标”。模型更关注语言的Attention干预将首先在原始FM上检验，再与Teacher组合，分别判断干预效果和组合效果。
@@ -417,8 +419,6 @@ __LINKS__
 - 历史DP/ACT的Spatial与Goal来自分别训练的suite策略，不是同一个跨suite模型；目标不可辨识与性能差距有关，但跨架构差异不能只归因于语言。
 - 大表反事实一列为“两个canonical目标均成功 / 四条指令均成功”的**状态级**比例，分母为40个测试状态；与160 episodes总成功率是不同指标。β0若胜出，所列为复用的baseline反事实结果，非干预收益。
 
-
-__LOCAL_VERIFIED_ANALYSIS__
 
 ## 8. 全方法评估结果大表（主实验最终29999；结果截至上述更新时间）
 
