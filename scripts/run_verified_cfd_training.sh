@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Launch only after verified collection and source tests have passed.
-set -euo pipefail
+set -Eeuo pipefail
 cd /home/gml/xz/openpi
 PHASE="${1:-all}"
 [[ "$PHASE" =~ ^(smoke|all)$ ]]
@@ -41,7 +41,7 @@ run_train() {
     if [[ "$steps" == 30000 ]]; then wandb=(--wandb-enabled); fi
     echo "TRAINING $run" > "$LOG/STATUS"
     env CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
-      WANDB_MODE=online WANDB_ENTITY=xzzsryouxiwang-shenzhen-university \
+      WANDB_MODE="${WANDB_MODE:-online}" WANDB_ENTITY=xzzsryouxiwang-shenzhen-university \
       .venv/bin/python scripts/train.py "$cfg" --checkpoint-base-dir "$SSD" --exp-name "$run" \
       --num-train-steps "$steps" --save-interval "$save_interval" --keep-period "$keep_period" \
       --log-interval 1 "${wandb[@]}" "${resume[@]}" > "$LOG/train_$run.log" 2>&1
