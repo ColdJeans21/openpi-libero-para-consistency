@@ -21,7 +21,10 @@ PY
 # Actual transformed dataset validation before loading large weights.
 JAX_PLATFORMS=cpu .venv/bin/python scripts/check_verified_cfd_data.py > "$LOG/data_check.json"
 run_train() {
-  local cfg="$1" run="$2" steps="$3" target link
+  local cfg="$1" run="$2" steps="$3" target link save_interval keep_period
+  save_interval="$steps"
+  keep_period="$steps"
+  if [[ "$steps" == 30000 ]]; then save_interval=1000; keep_period=5000; fi
   target="$SSD/$cfg/$run"
   link="$PWD/checkpoints/$cfg/$run"
   mkdir -p "$(dirname "$target")" "$(dirname "$link")"
@@ -40,7 +43,7 @@ run_train() {
     env CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
       WANDB_MODE=online WANDB_ENTITY=xzzsryouxiwang-shenzhen-university \
       .venv/bin/python scripts/train.py "$cfg" --checkpoint-base-dir "$SSD" --exp-name "$run" \
-      --num-train-steps "$steps" --save-interval "$steps" --keep-period "$steps" \
+      --num-train-steps "$steps" --save-interval "$save_interval" --keep-period "$keep_period" \
       --log-interval 1 "${wandb[@]}" "${resume[@]}" > "$LOG/train_$run.log" 2>&1
   fi
   test -f "$target/$((steps-1))/_CHECKPOINT_METADATA"

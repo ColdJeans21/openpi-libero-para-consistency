@@ -57,3 +57,10 @@ stop gradients on the target prediction only, not on shared model parameters.
 Fixed names: pi0_libero_goal_verified_r{0,1,2}; verified_r{0,1,2}_30k.
 Do not tune on Plus. Lambda-0.1 is an initial auxiliary weight, not a known
 optimum. Record negative results and cost. No multi-seed extension in this run.
+
+## Recovery correction (2026-11-26)
+
+Formal runs save every 1,000 steps, preserving 5,000-step milestones and the
+final checkpoint. Launch the queue as an independent systemd user service so
+closing the assistant session does not own its lifecycle. Interrupted runs
+without any checkpoint must be archived, never called resumable or completed.
