@@ -4,6 +4,7 @@ import asyncio
 import concurrent.futures as futures
 import dataclasses
 import logging
+import os
 import pathlib
 import shutil
 from typing import Protocol
@@ -39,12 +40,21 @@ def initialize_checkpoint_dir(
 
     checkpoint_dir.mkdir(parents=True, exist_ok=True)
 
+    # Opt-in host-memory protection for full model + optimizer saves. This
+    # bounds serialization IO, not total RSS or the device-to-host snapshot.
+    io_gb = os.environ.get("OPENPI_CHECKPOINT_IO_GB")
+    handler_options = {}
+    if io_gb is not None:
+        if int(io_gb) <= 0:
+            raise ValueError("OPENPI_CHECKPOINT_IO_GB must be positive")
+        handler_options = {"save_concurrent_gb": int(io_gb), "restore_concurrent_gb": int(io_gb)}
+        logging.info("Checkpoint IO budget per item: %s GB", io_gb)
     mngr = ocp.CheckpointManager(
         checkpoint_dir,
         item_handlers={
             "assets": CallbackHandler(),
-            "train_state": ocp.PyTreeCheckpointHandler(),
-            "params": ocp.PyTreeCheckpointHandler(),
+            "train_state": ocp.PyTreeCheckpointHandler(**handler_options),
+            "params": ocp.PyTreeCheckpointHandler(**handler_options),
         },
         options=ocp.CheckpointManagerOptions(
             max_to_keep=1,
@@ -88,6 +98,9 @@ def save_state(
         "params": {"params": params},
     }
     checkpoint_manager.save(step, items)
+    if os.environ.get("OPENPI_CHECKPOINT_WAIT") == "1":
+        checkpoint_manager.wait_until_finished()
+        logging.info("Checkpoint %s committed before next training step", step)
 
 
 def restore_state(

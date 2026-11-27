@@ -4,6 +4,8 @@ set -Eeuo pipefail
 cd /home/gml/xz/openpi
 PHASE="${1:-all}"
 [[ "$PHASE" =~ ^(smoke|all)$ ]]
+START_R="${START_R:-0}"
+[[ "$START_R" =~ ^[012]$ ]]
 LOG=logs/verified_cfd_v2
 DATA=/data/openpi_triplets/verified_initial_pairs_v2
 SSD=/data/openpi_checkpoints
@@ -34,13 +36,17 @@ run_train() {
   if [[ ! -f "$target/$((steps-1))/_CHECKPOINT_METADATA" ]]; then
     local resume=()
     if [[ -d "$target" ]]; then
-      if find "$target" -name _CHECKPOINT_METADATA -print -quit | read -r _; then resume=(--resume);
+      if find "$target" -regextype posix-extended -maxdepth 2 -regex "$target/[0-9]+/_CHECKPOINT_METADATA" -print -quit | read -r _; then resume=(--resume);
       else echo "Incomplete directory without resumable checkpoint: $target"; return 1; fi
     fi
     local wandb=(--no-wandb-enabled)
     if [[ "$steps" == 30000 ]]; then wandb=(--wandb-enabled); fi
     echo "TRAINING $run" > "$LOG/STATUS"
+    if [[ -f "$LOG/train_$run.log" ]]; then
+      cp "$LOG/train_$run.log" "$LOG/train_$run.log.before_$(date +%Y%m%d_%H%M%S)"
+    fi
     env CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
+      OPENPI_CHECKPOINT_IO_GB=4 OPENPI_CHECKPOINT_WAIT=1 OPENPI_CHECKPOINT_SAVE_FIRST_STEP=1 \
       WANDB_MODE="${WANDB_MODE:-online}" WANDB_ENTITY=xzzsryouxiwang-shenzhen-university \
       .venv/bin/python scripts/train.py "$cfg" --checkpoint-base-dir "$SSD" --exp-name "$run" \
       --num-train-steps "$steps" --save-interval "$save_interval" --keep-period "$keep_period" \
@@ -63,6 +69,7 @@ PY
   printf 'config=%s\nrun=%s\nbase=pi0_base\n' "$cfg" "$run" > "$target/RUN_LABEL.txt"
 }
 for r in 0 1 2; do
+  (( r >= START_R )) || continue
   cfg="pi0_libero_goal_verified_r$r"
   run="verified_r${r}_smoke20"
   if [[ ! -f "$SSD/$cfg/$run/SMOKE_PASSED" ]]; then
@@ -73,6 +80,7 @@ done
 echo ALL_GPU_SMOKES_PASSED > "$LOG/STATUS"
 [[ "$PHASE" == all ]] || exit 0
 for r in 0 1 2; do
+  (( r >= START_R )) || continue
   cfg="pi0_libero_goal_verified_r$r"
   run="verified_r${r}_30k"
   run_train "$cfg" "$run" 30000
