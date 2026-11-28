@@ -46,3 +46,17 @@ def test_waited_save_restores_optimizer_and_weights(tmp_path, monkeypatch):
         assert int(restored.opt_state[0].count) == 0
     finally:
         manager.close()
+
+
+def test_committed_step_zero_is_resumable(tmp_path):
+    root = tmp_path / "run"
+    manager, _ = checkpoints.initialize_checkpoint_dir(root, keep_period=5, overwrite=False, resume=False)
+    manager.save(0, {"params": {"params": jnp.arange(4)}, "train_state": {"step": jnp.asarray(1)}})
+    manager.wait_until_finished()
+    manager.close()
+    manager, resuming = checkpoints.initialize_checkpoint_dir(root, keep_period=5, overwrite=False, resume=True)
+    try:
+        assert resuming, "A committed checkpoint0 contains a valid post-update state"
+        assert manager.latest_step() == 0
+    finally:
+        manager.close()

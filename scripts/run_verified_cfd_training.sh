@@ -46,10 +46,13 @@ run_train() {
       cp "$LOG/train_$run.log" "$LOG/train_$run.log.before_$(date +%Y%m%d_%H%M%S)"
     fi
     env CUDA_VISIBLE_DEVICES=0,1 XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 \
+      MALLOC_ARENA_MAX=2 MALLOC_TRIM_THRESHOLD_=131072 OPENPI_CHECKPOINT_TRIM_HOST=1 \
       OPENPI_CHECKPOINT_IO_GB=4 OPENPI_CHECKPOINT_WAIT=1 OPENPI_CHECKPOINT_SAVE_FIRST_STEP=1 \
+      OPENPI_CHECKPOINT_STARTUP_STEPS="${OPENPI_CHECKPOINT_STARTUP_STEPS:-1}" \
       WANDB_MODE="${WANDB_MODE:-online}" WANDB_ENTITY=xzzsryouxiwang-shenzhen-university \
       .venv/bin/python scripts/train.py "$cfg" --checkpoint-base-dir "$SSD" --exp-name "$run" \
       --num-train-steps "$steps" --save-interval "$save_interval" --keep-period "$keep_period" \
+      --num-workers "${OPENPI_NUM_WORKERS:-2}" \
       --log-interval 1 "${wandb[@]}" "${resume[@]}" > "$LOG/train_$run.log" 2>&1
   fi
   test -f "$target/$((steps-1))/_CHECKPOINT_METADATA"

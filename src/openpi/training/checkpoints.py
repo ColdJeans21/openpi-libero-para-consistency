@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures as futures
+import ctypes
 import dataclasses
+import gc
 import logging
 import os
 import pathlib
 import shutil
+import sys
 from typing import Protocol
 
 from etils import epath
@@ -67,11 +70,24 @@ def initialize_checkpoint_dir(
     # Special case: the checkpoint directory exists and the user requests to resume training, but the training run did
     # not get to the first checkpoint saved. In this case, we don't actually want the train script to try and restore a
     # checkpoint, since it will fail.
-    if resuming and tuple(mngr.all_steps()) in [(), (0,)]:
+    if resuming and not mngr.all_steps():
         logging.info("Checkpoint directory exists, but does not contain any checkpoints. Aborting resume.")
         resuming = False
 
     return mngr, resuming
+
+
+def _release_unused_host_memory():
+    """Release unused glibc arenas, never live model/optimizer arrays."""
+    if os.environ.get("OPENPI_CHECKPOINT_TRIM_HOST") != "1":
+        return
+    gc.collect()
+    if sys.platform == "linux":
+        trim = getattr(ctypes.CDLL(None), "malloc_trim", None)
+        if trim is not None:
+            trim.argtypes = [ctypes.c_size_t]
+            trim.restype = ctypes.c_int
+            logging.info("Released unused host allocator pages: malloc_trim=%s", trim(0))
 
 
 def save_state(
@@ -97,9 +113,11 @@ def save_state(
         "train_state": train_state,
         "params": {"params": params},
     }
+    _release_unused_host_memory()
     checkpoint_manager.save(step, items)
     if os.environ.get("OPENPI_CHECKPOINT_WAIT") == "1":
         checkpoint_manager.wait_until_finished()
+        _release_unused_host_memory()
         logging.info("Checkpoint %s committed before next training step", step)
 
 

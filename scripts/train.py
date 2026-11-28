@@ -273,7 +273,8 @@ def main(config: _config.TrainConfig):
             infos = []
         batch = next(data_iter)
 
-        save_first_step = step == start_step and os.environ.get("OPENPI_CHECKPOINT_SAVE_FIRST_STEP") == "1"
+        startup_saves = int(os.environ.get("OPENPI_CHECKPOINT_STARTUP_STEPS", "1"))
+        save_first_step = step < start_step + startup_saves and os.environ.get("OPENPI_CHECKPOINT_SAVE_FIRST_STEP") == "1"
         if save_first_step or (step % config.save_interval == 0 and step > start_step) or step == config.num_train_steps - 1:
             _checkpoints.save_state(checkpoint_manager, train_state, data_loader, step)
 
